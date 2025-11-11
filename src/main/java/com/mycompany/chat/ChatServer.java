@@ -32,6 +32,7 @@ public class ChatServer {
             } else {
                 System.err.println("Error: No se pudo conectar a la base de datos");
                 System.err.println("  Asegurate de que MySQL este corriendo y ejecuta schema.sql\n");
+                return;
             }
 
             while (running) {
