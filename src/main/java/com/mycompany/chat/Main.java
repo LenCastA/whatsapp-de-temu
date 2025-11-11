@@ -60,8 +60,6 @@ public class Main {
 
         System.out.println("\nEjecutando script SQL...");
         
-        
-        // Implementar la ejecución de schema.sql. Intentar con ProcessBuilder (se usa para comandos en la shell)
         EjecutorSql ejec = EjecutorSql.CreateEjecutorSql();
         ejec.CreateDatabase(user, pass);
         pausar();

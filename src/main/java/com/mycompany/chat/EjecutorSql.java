@@ -51,6 +51,8 @@ public class EjecutorSql {
             }
 
             System.out.println("\n🎉 Script ejecutado con éxito.");
+            Database.setUser(usuario);
+            Database.setPassword(contraseña);
         } catch (Exception e) {
             e.printStackTrace();
         }
