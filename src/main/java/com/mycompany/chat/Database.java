@@ -4,7 +4,7 @@ import java.sql.*;
 
 public class Database {
     // Tratar de dinamizar
-    private static final String URL = "jdbc:mysql://localhost:3306/chatdb?useSSL=false&serverTimezone=UTC";
+    private static final String URL = "jdbc:mysql://localhost:3306/chatdb?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
     private static String USER = "root";
     private static String PASS = "root";
     
@@ -24,34 +24,69 @@ public class Database {
         }
     }
 
-    // Autenticación
-    public static boolean authenticate(String username, String password) throws SQLException {
-        if (username == null || password == null || username.isEmpty() || password.isEmpty()) {
+    private static Connection getConnection() throws SQLException {
+        return DriverManager.getConnection(URL, USER, PASS);
+    }
+
+    // Autenticación usando PreparedStatement (sin SQL injection)
+    public static boolean authenticate(String username, String password) {
+        if (username == null || password == null ||
+            username.isEmpty() || password.isEmpty()) {
             return false;
         }
 
-        String sql = "SELECT password FROM users WHERE username = '" + username + "'";
+        String sql = "SELECT password FROM users WHERE username = ?";
 
-        try (Connection conn = DriverManager.getConnection(URL, USER, PASS);
-                Statement stmt = conn.createStatement();
-                ResultSet rs = stmt.executeQuery(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
 
-            if (!rs.next()) {
-                return false;
+            ps.setString(1, username);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return false; // usuario no existe
+                }
+
+                String storedPassword = rs.getString("password");
+                // Comparación en texto plano (porque en schema.sql también están en texto plano)
+                return password.equals(storedPassword);
             }
 
-            String storedPassword = rs.getString("password");
-            return password.equals(storedPassword);
+        } catch (SQLException e) {
+            System.err.println("Error en authenticate(): " + e.getMessage());
+            return false;
         }
     }
 
-    // Verificación de la conexión a la base de datos
     public static boolean testConnection() {
-        try (Connection conn = DriverManager.getConnection(URL, USER, PASS)) {
+        try (Connection conn = getConnection()) {
             return conn != null && !conn.isClosed();
         } catch (SQLException e) {
             System.err.println("Error al conectar con la base de datos: " + e.getMessage());
             return false;
         }
     }
+    // Registrar nuevo usuario en la BD
+    public static boolean registerUser(String username, String password) {
+        if (username == null || password == null ||
+            username.isEmpty() || password.isEmpty()) {
+            return false;
+        }
+
+        String sql = "INSERT INTO users (username, password) VALUES (?, ?)";
+
+        try (Connection conn = getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setString(1, username);
+            ps.setString(2, password); // por ahora texto plano
+
+            ps.executeUpdate();
+            return true;
+        } catch (SQLException e) {
+            System.err.println("Error en registerUser(): " + e.getMessage());
+            return false;
+        }
+    }
+
 }

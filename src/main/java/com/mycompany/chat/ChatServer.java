@@ -1,18 +1,30 @@
 package com.mycompany.chat;
 
-import java.io.*;
-import java.net.*;
-import java.util.*;
-import java.util.concurrent.*;
+import java.io.IOException;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketException;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class ChatServer {
-    private static final int PORT = 9000;
+    private int port;
     private ServerSocket serverSocket;
     private ExecutorService threadPool;
     private Set<ClientHandler> clients;
     private volatile boolean running;
 
+    // Constructor por defecto (puerto 9000)
     public ChatServer() {
+        this(9000);
+    }
+
+    // Constructor con puerto configurable
+    public ChatServer(int port) {
+        this.port = port;
         this.clients = ConcurrentHashMap.newKeySet();
         this.threadPool = Executors.newCachedThreadPool();
         this.running = true;
@@ -20,9 +32,9 @@ public class ChatServer {
 
     public void start() {
         try {
-            serverSocket = new ServerSocket(PORT);
+            serverSocket = new ServerSocket(port);
             System.out.println("===========================================");
-            System.out.println("    Servidor de Chat iniciado en puerto " + PORT);
+            System.out.println("    Servidor de Chat iniciado en puerto " + port);
             System.out.println("===========================================");
             System.out.println("Esperando conexiones de clientes...\n");
 
@@ -57,9 +69,7 @@ public class ChatServer {
         }
     }
 
-    /**
-     * Envía un mensaje a todos los clientes excepto al emisor
-     */
+    // Envía un mensaje a todos los clientes excepto al emisor
     public void broadcast(String message, ClientHandler sender) {
         for (ClientHandler client : clients) {
             if (client != sender && client.isAuthenticated()) {
@@ -68,9 +78,7 @@ public class ChatServer {
         }
     }
 
-    /**
-     * Envía un archivo a todos los clientes excepto al emisor
-     */
+    // Envía un archivo a todos los clientes excepto al emisor
     public void broadcastFile(String fileName, byte[] fileData, ClientHandler sender) {
         for (ClientHandler client : clients) {
             if (client != sender && client.isAuthenticated()) {
@@ -79,18 +87,14 @@ public class ChatServer {
         }
     }
 
-    /**
-     * Agrega un cliente a la sala
-     */
+    // Agrega un cliente a la sala
     public void addClient(ClientHandler client) {
         clients.add(client);
         System.out.println("Usuario autenticado: " + client.getUsername()
                 + " (Total conectados: " + clients.size() + ")");
     }
 
-    /**
-     * Remueve un cliente de la sala
-     */
+    // Remueve un cliente de la sala
     public void removeClient(ClientHandler client) {
         clients.remove(client);
         if (client.getUsername() != null) {
@@ -100,9 +104,7 @@ public class ChatServer {
         }
     }
 
-    /**
-     * Detiene el servidor
-     */
+    // Detiene el servidor
     public void shutdown() {
         running = false;
         try {
@@ -126,12 +128,10 @@ public class ChatServer {
         }
     }
 
+    // main de prueba (puedes dejarlo o ignorarlo si usas Main.java)
     public static void main(String[] args) {
         ChatServer server = new ChatServer();
-
-        // Agregar shutdown hook para cerrar limpiamente
         Runtime.getRuntime().addShutdownHook(new Thread(server::shutdown));
-
         server.start();
     }
 }
