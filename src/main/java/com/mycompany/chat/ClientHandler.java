@@ -90,44 +90,38 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    private void handleLogin(String[] parts) {
-        if (authenticated) {
-            sendMessage("ERROR|Ya estás autenticado como " + username);
-            return;
-        }
-
-        if (parts.length < 3) {
-            sendMessage("ERROR|Formato incorrecto. Usa: LOGIN|username|password");
-            return;
-        }
-
-        String user = parts[1];
-        String pass = parts[2];
-
-        try {
-            if (Database.authenticate(user, pass)) {
-                this.username = user;
-                this.authenticated = true;
-                server.addClient(this);
-                sendMessage("OK|LOGIN|Bienvenido " + username + "!");
-                server.broadcast("SYSTEM|" + username + " se ha conectado", this);
-            } else {
-                sendMessage("ERROR|Credenciales invalidas");
-                System.out.println("Intento de login fallido: " + user);
-            }
-        } catch (SQLException e) {
-            sendMessage("ERROR|Error de base de datos");
-            System.err.println("====================================");
-            System.err.println("ERROR SQL EN AUTENTICACIÓN:");
-            System.err.println("Usuario: " + user);
-            System.err.println("Mensaje: " + e.getMessage());
-            System.err.println("SQL State: " + e.getSQLState());
-            System.err.println("Error Code: " + e.getErrorCode());
-            e.printStackTrace();
-            System.err.println("====================================");
-        }
+private void handleLogin(String[] parts) {
+    if (authenticated) {
+        sendMessage("ERROR|Ya estás autenticado como " + username);
+        return;
     }
-    
+
+    if (parts.length < 3) {
+        sendMessage("ERROR|Formato incorrecto. Usa: LOGIN|username|password");
+        return;
+    }
+
+    String user = parts[1];
+    String pass = parts[2];
+
+    try {
+        if (Database.authenticate(user, pass)) {
+            this.username = user;
+            this.authenticated = true;
+            server.addClient(this);
+            sendMessage("OK|LOGIN|Bienvenido " + username + "!");
+            server.broadcast("SYSTEM|" + username + " se ha conectado", this);
+        } else {
+            sendMessage("ERROR|Credenciales invalidas");
+            System.out.println("Intento de login fallido: " + user);
+        }
+    } catch (Exception e) {
+        sendMessage("ERROR|Error inesperado durante autenticacion");
+        System.err.println("Error autenticando a " + user + ": " + e.getMessage());
+    }
+}
+
+
     public void sendMessage(String message) {
         if (out != null && !socket.isClosed()) {
             out.println(message);

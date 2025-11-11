@@ -28,24 +28,29 @@ public class Main {
                     System.out.println("\n¡Hasta luego!");
                     System.exit(0);
                     break;
+                case "6":
+                    registrarUsuario();
+                    break;
                 default:
                     System.out.println("\nOpcion invalida. Intenta de nuevo.\n");
             }
         }
     }
 
-    private static void mostrarMenu() {
-        System.out.println("======================================================");
-        System.out.println("                   MENÚ PRINCIPAL                     ");
-        System.out.println("======================================================");
-        System.out.println("[1] Configurar base de datos MySQL");
-        System.out.println("[2] Iniciar SERVIDOR");
-        System.out.println("[3] Iniciar CLIENTE");
-        System.out.println("[4] Verificar conexion a base de datos");
-        System.out.println("[5] Salir");
-        System.out.println("\n-----------------------------------------------------");
-        System.out.print("Selecciona una opción: ");
-    }
+private static void mostrarMenu() {
+    System.out.println("======================================================");
+    System.out.println("                   MENÚ PRINCIPAL                     ");
+    System.out.println("======================================================");
+    System.out.println("[1] Configurar base de datos MySQL");
+    System.out.println("[2] Iniciar SERVIDOR");
+    System.out.println("[3] Iniciar CLIENTE");
+    System.out.println("[4] Verificar conexion a base de datos");
+    System.out.println("[5] Salir");
+    System.out.println("[6] Registrar nuevo usuario");
+    System.out.println("\n-----------------------------------------------------");
+    System.out.print("Selecciona una opción: ");
+}
+
 
     private static void configurarBaseDatos() {
         System.out.println("\nConfiguracion de Base de Datos MySQL");
@@ -68,53 +73,87 @@ public class Main {
     private static void iniciarServidor() {
         System.out.println("\nIniciando Servidor del chat...");
         System.out.println("-----------------------------------------------------\n");
-        System.out.println("El servidor se ejecutara en esta ventana.");
-        System.out.println("-----------------------------------------------------\n");
+        System.out.print("Puerto del servidor (default 9000): ");
+        String portStr = scanner.nextLine().trim();
 
+        int port = 9000;
+        if (!portStr.isEmpty()) {
+            try {
+                port = Integer.parseInt(portStr);
+            } catch (NumberFormatException e) {
+                System.out.println("Puerto inválido, usando 9000 por defecto.");
+            }
+        }
+
+        System.out.println("\nEl servidor se ejecutara en esta ventana.");
+        System.out.println("-----------------------------------------------------\n");
         pausar();
 
-        // Inicio del servidor
-        ChatServer server = new ChatServer();
+        ChatServer server = new ChatServer(port);
         Runtime.getRuntime().addShutdownHook(new Thread(server::shutdown));
         server.start();
     }
 
+
     private static void iniciarCliente() {
         System.out.println("\nIniciando Cliente del chat...");
         System.out.println("-----------------------------------------------------\n");
-        System.out.println("El cliente se ejecutara en esta ventana.");
+
+        System.out.print("IP/host del servidor (default: localhost): ");
+        String host = scanner.nextLine().trim();
+        if (host.isEmpty()) host = "localhost";
+
+        System.out.print("Puerto del servidor (default: 9000): ");
+        String portStr = scanner.nextLine().trim();
+        int port = 9000;
+        if (!portStr.isEmpty()) {
+            try {
+                port = Integer.parseInt(portStr);
+            } catch (NumberFormatException e) {
+                System.out.println("Puerto inválido, usando 9000 por defecto.");
+            }
+        }
+
+        System.out.println("\nEl cliente se ejecutara en esta ventana.");
         System.out.println("Para volver al menu, cierra el cliente con /logout");
         System.out.println("-----------------------------------------------------\n");
 
         pausar();
 
-        // Iniciar el cliente
-        ChatClient client = new ChatClient();
+        ChatClient client = new ChatClient(host, port);
         client.connect();
 
-        // Volviendo al menú cuando el cliente termina
         System.out.println("\nCliente cerrado. Volviendo al menu...");
     }
+
 
     private static void verificarConexionDB() {
         System.out.println("\nVerificando conexion a base de datos...");
         System.out.println("-----------------------------------------------------\n");
 
-        try {
-            if (Database.testConnection()) {
-                System.out.println("Conexion exitosa a la base de datos MySQL!");
-                System.out.println("    Base de datos: chatdb");
-                System.out.println("    Estado: Listo para usar");
+        boolean ok = Database.testConnection();
+
+        while (!ok) {
+            System.out.println("No se pudo conectar a la base de datos.\n");
+            System.out.println("Opciones:");
+            System.out.println("  [1] Reconfigurar credenciales de MySQL");
+            System.out.println("  [2] Volver al menú principal");
+            System.out.print("Elige una opcion: ");
+
+            String op = scanner.nextLine().trim();
+            if ("1".equals(op)) {
+                configurarBaseDatos();
+                ok = Database.testConnection();
+            } else if ("2".equals(op)) {
+                return;
             } else {
-                System.out.println("No se pudo conectar a la base de datos.");
-                System.out.println("\nVerifica:");
-                System.out.println("    MySQL esta corriendo");
-                System.out.println("    Ejecutaste la opcion [1] para configurar DB");
-                System.out.println("    Las credenciales en Database.java son correctas");
+                System.out.println("Opcion invalida.\n");
             }
-        } catch (Exception e) {
-            System.err.println("Error: " + e.getMessage());
         }
+
+        System.out.println("Conexion exitosa a la base de datos MySQL!");
+        System.out.println("    Base de datos: chatdb");
+        System.out.println("    Estado: Listo para usar");
 
         pausar();
     }
@@ -123,4 +162,23 @@ public class Main {
         System.out.println("\nPresiona Enter para continuar...");
         scanner.nextLine();
     }
+    private static void registrarUsuario() {
+        System.out.println("\nRegistro de nuevo usuario");
+        System.out.println("-----------------------------------------------------");
+
+        System.out.print("Nuevo username: ");
+        String user = scanner.nextLine().trim();
+
+        System.out.print("Password: ");
+        String pass = scanner.nextLine().trim();
+
+        if (Database.registerUser(user, pass)) {
+            System.out.println("Usuario registrado correctamente!");
+        } else {
+            System.out.println("No se pudo registrar el usuario. Revisa la consola para más detalles.");
+        }
+
+        pausar();
+    }
+
 }

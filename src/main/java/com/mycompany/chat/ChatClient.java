@@ -6,8 +6,8 @@ import java.nio.file.*;
 import java.util.Scanner;
 
 public class ChatClient {
-    private static final String SERVER_HOST = "localhost"; // Cambiar a IP del servidor
-    private static final int SERVER_PORT = 9000;
+    private String host;
+    private int port;
 
     private Socket socket;
     private BufferedReader in;
@@ -17,7 +17,15 @@ public class ChatClient {
     private Scanner scanner;
     private volatile boolean running;
 
+    // Constructor por defecto => localhost:9000
     public ChatClient() {
+        this("localhost", 9000);
+    }
+
+    // Constructor configurable (lo usa Main)
+    public ChatClient(String host, int port) {
+        this.host = host;
+        this.port = port;
         this.scanner = new Scanner(System.in);
         this.running = true;
     }
@@ -30,9 +38,9 @@ public class ChatClient {
             System.out.println("===========================================");
             System.out.println("        Cliente de Chat - Terminal        ");
             System.out.println("===========================================");
-            System.out.println("Conectando al servidor " + SERVER_HOST + ":" + SERVER_PORT + "...\n");
+            System.out.println("Conectando al servidor " + host + ":" + port + "...\n");
 
-            socket = new Socket(SERVER_HOST, SERVER_PORT);
+            socket = new Socket(host, port);
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             out = new PrintWriter(socket.getOutputStream(), true);
             dataIn = new DataInputStream(socket.getInputStream());
@@ -40,15 +48,15 @@ public class ChatClient {
 
             System.out.println("Conectado al servidor!\n");
 
-            // Iniciar hilo para recibir mensajes
+            // Hilo para recibir mensajes
             Thread receiveThread = new Thread(this::receiveMessages);
             receiveThread.setDaemon(true);
             receiveThread.start();
 
-            // Esperar mensaje de bienvenida del servidor
+            // Esperar un poquito por el mensaje de bienvenida
             Thread.sleep(500);
 
-            // Pedir credenciales de login
+            // Pedir credenciales
             System.out.println("-------------------------------------");
             System.out.println("           INICIAR SESION");
             System.out.println("-------------------------------------");
@@ -58,15 +66,14 @@ public class ChatClient {
             System.out.print("Contrasena: ");
             String password = scanner.nextLine().trim();
 
-            // CAMBIAR por el nuevo formato /login
+            // Enviar login al servidor
             sendMessage("LOGIN|" + username + "|" + password);
 
-            // Esperar respuesta del servidor
+            // Esperar respuesta
             Thread.sleep(1000);
-            
             System.out.println("-------------------------------------\n");
 
-            // Manejar entrada del usuario
+            // Manejar input del usuario
             handleUserInput();
 
         } catch (IOException e) {
@@ -79,7 +86,7 @@ public class ChatClient {
         }
     }
 
-    // Recibe mensajes del servidor (corre en hilo separado)
+    // Recibe mensajes del servidor (hilo separado)
     private void receiveMessages() {
         try {
             String message;
@@ -132,7 +139,7 @@ public class ChatClient {
 
             case "SYSTEM":
                 if (parts.length >= 2) {
-                    System.out.println("" + parts[1]);
+                    System.out.println(parts[1]);
                 }
                 break;
 
@@ -152,14 +159,10 @@ public class ChatClient {
     // Recibe un archivo del servidor
     private void receiveFile(String fileName, int fileSize) {
         try {
-            // Leer tamaño
-            int size = dataIn.readInt();
-
-            // Leer datos
+            int size = dataIn.readInt(); // tamaño real enviado
             byte[] fileData = new byte[size];
             dataIn.readFully(fileData);
 
-            // Guardar archivo en directorio downloads
             Path downloadDir = Paths.get("downloads");
             if (!Files.exists(downloadDir)) {
                 Files.createDirectories(downloadDir);
@@ -186,11 +189,9 @@ public class ChatClient {
                     continue;
                 }
 
-                // Comandos especiales
                 if (input.startsWith("/")) {
                     handleCommand(input);
                 } else {
-                    // Mensaje normal
                     sendMessage("MSG|" + input);
                 }
 
@@ -254,7 +255,7 @@ public class ChatClient {
                 return;
             }
 
-            // Enviar comando FILE
+            // Avisar al servidor que viene un archivo
             sendMessage("FILE|" + fileName);
 
             // Enviar tamaño y datos
@@ -285,7 +286,6 @@ public class ChatClient {
         System.out.println();
         System.out.println("  /file <ruta>");
         System.out.println("    Envía un archivo a todos los usuarios");
-        System.out.println("    Ejemplo: /file C:\\Users\\usuario\\imagen.jpg");
         System.out.println();
         System.out.println("  /logout");
         System.out.println("    Cierra la sesión y sale del chat");
@@ -295,26 +295,17 @@ public class ChatClient {
         System.out.println("─────────────────────────────────────────\n");
     }
 
-    /**
-     * Desconecta del servidor
-     */
+    // Desconecta del servidor
     private void disconnect() {
         running = false;
 
         try {
-            if (in != null)
-                in.close();
-            if (out != null)
-                out.close();
-            if (dataIn != null)
-                dataIn.close();
-            if (dataOut != null)
-                dataOut.close();
-            if (socket != null && !socket.isClosed())
-                socket.close();
-            // NO cerrar scanner porque cierra System.in y causa problemas en Main.java
-            // if (scanner != null)
-            // scanner.close();
+            if (in != null) in.close();
+            if (out != null) out.close();
+            if (dataIn != null) dataIn.close();
+            if (dataOut != null) dataOut.close();
+            if (socket != null && !socket.isClosed()) socket.close();
+            // No cerramos scanner para no matar System.in
         } catch (IOException e) {
             System.err.println("Error al cerrar conexión: " + e.getMessage());
         }
@@ -322,12 +313,10 @@ public class ChatClient {
         System.out.println("\nDesconectado del servidor. ¡Hasta luego!");
     }
 
+    // main de prueba (puedes usar Main.java también)
     public static void main(String[] args) {
         ChatClient client = new ChatClient();
-
-        // Agregar shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(client::disconnect));
-
         client.connect();
     }
 }

@@ -1,0 +1,7 @@
+# Archivos y carpetas a ignorar
+target/
+*.class
+*.log
+*.tmp
+.DS_Store
+nbproject/private/
