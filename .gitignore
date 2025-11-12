@@ -1,10 +1,52 @@
-# Archivos y carpetas a ignorar
+# ==========================
+# Archivos y carpetas de compilación
+# ==========================
 target/
 *.class
+*.jar
+*.war
+*.ear
 *.log
 *.tmp
-.DS_Store
+
+# ==========================
+# Configuración del IDE
+# ==========================
+# NetBeans
 nbproject/private/
+build/
+nbbuild/
+dist/
+nbdist/
+nbactions.xml
+nb-configuration.xml
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+
+# VSCode
+.vscode/
+
+# ==========================
+# Archivos del sistema
+# ==========================
+.DS_Store
+Thumbs.db
+
+# ==========================
+# Archivos generados o temporales
+# ==========================
 downloads/
 *.txt
 *.png
+*.mp4
+*.pdf
+
+# ==========================
+# Archivos de entorno local
+# ==========================
+.env
+.env.local
+*.properties.local
