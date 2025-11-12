@@ -10,13 +10,21 @@ public class ClientHandler implements Runnable {
     private BufferedReader in;
     private PrintWriter out;
     private DataInputStream dataIn;
+    private DataInputStream videoIn;
     private DataOutputStream dataOut;
+    private Socket videoClient;
     private String username;
+    private boolean videoActive = false;
     private boolean authenticated;
     private volatile boolean running;
+    
+    public Socket getSocket(){return socket;}
+    public Socket getVideoSocket(){return videoClient;}
+    public boolean getVideoActive(){return videoActive;}
 
-    public ClientHandler(Socket socket, ChatServer server) {
+    public ClientHandler(Socket socket, ChatServer server, Socket videoSocket) {
         this.socket = socket;
+        this.videoClient = videoSocket;
         this.server = server;
         this.authenticated = false;
         this.running = true;
@@ -70,7 +78,9 @@ public class ClientHandler implements Runnable {
                         sendMessage("ERROR|Debes iniciar sesión primero");
                     }
                     break;
-
+                case "VIDEO":
+                    handleVideoCommand();
+                    break;
                 case "FILE":
                     break;
 
@@ -90,6 +100,7 @@ public class ClientHandler implements Runnable {
         }
     }
 
+    
 private void handleLogin(String[] parts) {
     if (authenticated) {
         sendMessage("ERROR|Ya estás autenticado como " + username);
@@ -120,8 +131,37 @@ private void handleLogin(String[] parts) {
         System.err.println("Error autenticando a " + user + ": " + e.getMessage());
     }
 }
-
-
+private void receiveVideo() {
+    try {
+        while (videoActive && running) {
+            int length = videoIn.readInt(); // tamaño del frame
+            byte[] frame = new byte[length];
+            videoIn.readFully(frame);
+            server.broadcastVideo(frame, this);
+        }
+    } catch (IOException e) {
+        System.out.println("Video finalizado para " + username);
+    }
+}
+private void handleVideoCommand() {
+    if (!videoActive) {
+        try {
+            // ⚡ Inicializar video solo cuando se active
+            videoIn = new DataInputStream(videoClient.getInputStream());
+            videoActive = true;
+            sendMessage("SERVER|Video activado.");
+            new Thread(this::receiveVideo).start();
+        } catch (IOException e) {
+            sendMessage("ERROR|No se pudo iniciar el video: " + e.getMessage());
+        }
+    } else {
+        videoActive = false;
+        sendMessage("SERVER|Video desactivado.");
+        try {
+            if (videoIn != null) videoIn.close();
+        } catch (IOException ignored) {}
+    }
+}
     public void sendMessage(String message) {
         if (out != null && !socket.isClosed()) {
             out.println(message);

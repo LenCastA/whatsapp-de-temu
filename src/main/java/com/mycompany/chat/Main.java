@@ -2,10 +2,13 @@ package com.mycompany.chat;
 
 import java.io.*;
 import java.util.Scanner;
+import org.opencv.core.Core;
 
 public class Main {
     private static final Scanner scanner = new Scanner(System.in);
-
+    static {
+        System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
+    }
     public static void main(String[] args) {
         while (true) {
             mostrarMenu();

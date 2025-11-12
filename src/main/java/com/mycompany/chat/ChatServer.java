@@ -1,5 +1,6 @@
 package com.mycompany.chat;
 
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -13,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 public class ChatServer {
     private int port;
     private ServerSocket serverSocket;
+    private ServerSocket videoServer;
     private ExecutorService threadPool;
     private Set<ClientHandler> clients;
     private volatile boolean running;
@@ -33,6 +35,7 @@ public class ChatServer {
     public void start() {
         try {
             serverSocket = new ServerSocket(port);
+            videoServer = new ServerSocket(port+1);
             System.out.println("===========================================");
             System.out.println("    Servidor de Chat iniciado en puerto " + port);
             System.out.println("===========================================");
@@ -50,9 +53,10 @@ public class ChatServer {
             while (running) {
                 try {
                     Socket clientSocket = serverSocket.accept();
+                    Socket clientVideo = videoServer.accept();
                     System.out.println("Nueva conexion desde: " + clientSocket.getInetAddress());
 
-                    ClientHandler handler = new ClientHandler(clientSocket, this);
+                    ClientHandler handler = new ClientHandler(clientSocket, this, clientVideo);
                     threadPool.submit(handler);
 
                 } catch (SocketException e) {
@@ -77,7 +81,21 @@ public class ChatServer {
             }
         }
     }
-
+    
+    public void broadcastVideo(byte[] frame, ClientHandler sender){
+        for (ClientHandler client : clients) {
+            if (client != sender && client.getVideoSocket() != null) {
+                try {
+                    DataOutputStream out = new DataOutputStream(client.getVideoSocket().getOutputStream());
+                    out.writeInt(frame.length);
+                    out.write(frame);
+                    out.flush();
+                } catch (IOException e) {
+                    System.err.println("Error enviando frame a " + client.getUsername() + ": " + e.getMessage());
+                }
+            }
+        }
+    }
     // Envía un archivo a todos los clientes excepto al emisor
     public void broadcastFile(String fileName, byte[] fileData, ClientHandler sender) {
         for (ClientHandler client : clients) {
