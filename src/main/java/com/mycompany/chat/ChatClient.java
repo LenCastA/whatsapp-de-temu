@@ -53,7 +53,7 @@ public class ChatClient {
             receiveThread.setDaemon(true);
             receiveThread.start();
 
-            // Esperar un poquito por el mensaje de bienvenida
+            // Esperar por el mensaje de bienvenida
             Thread.sleep(500);
 
             // Pedir credenciales
@@ -66,7 +66,7 @@ public class ChatClient {
             System.out.print("Contrasena: ");
             String password = scanner.nextLine().trim();
 
-            // Enviar login al servidor
+            // Enviar login al servidor según nuevo formato
             sendMessage("LOGIN|" + username + "|" + password);
 
             // Esperar respuesta
@@ -159,24 +159,29 @@ public class ChatClient {
     // Recibe un archivo del servidor
     private void receiveFile(String fileName, int fileSize) {
         try {
-            int size = dataIn.readInt(); // tamaño real enviado
-            byte[] fileData = new byte[size];
-            dataIn.readFully(fileData);
+                // Leer exactamente fileSize bytes del socket
+                byte[] fileData = new byte[fileSize];
+                int read = 0;
+                while (read < fileSize) {
+                    int r = dataIn.read(fileData, read, fileSize - read);
+                    if (r == -1) throw new EOFException("Conexión cerrada durante la recepción del archivo");
+                    read += r;
+                }
 
-            Path downloadDir = Paths.get("downloads");
-            if (!Files.exists(downloadDir)) {
-                Files.createDirectories(downloadDir);
+                // Guardar archivo en /downloads
+                Path downloadDir = Paths.get("downloads");
+                if (!Files.exists(downloadDir)) {
+                    Files.createDirectories(downloadDir);
+                }
+                Path filePath = downloadDir.resolve(fileName);
+                Files.write(filePath, fileData);
+
+                System.out.println("Archivo recibido: " + fileName + " (" + fileSize + " bytes)");
+                System.out.println("   Guardado en: " + filePath.toAbsolutePath());
+
+            } catch (IOException e) {
+                System.err.println("Error recibiendo archivo: " + e.getMessage());
             }
-
-            Path filePath = downloadDir.resolve(fileName);
-            Files.write(filePath, fileData);
-
-            System.out.println("Archivo recibido: " + fileName + " (" + fileSize + " bytes)");
-            System.out.println("   Guardado en: " + filePath.toAbsolutePath());
-
-        } catch (IOException e) {
-            System.err.println("Error recibiendo archivo: " + e.getMessage());
-        }
     }
 
     // Maneja la entrada del usuario
@@ -249,6 +254,7 @@ public class ChatClient {
 
             byte[] fileData = Files.readAllBytes(path);
             String fileName = path.getFileName().toString();
+            int fileSize = fileData.length;
 
             if (fileData.length > 50 * 1024 * 1024) { // 50MB límite
                 System.out.println("Archivo demasiado grande (max 50MB)");
@@ -256,14 +262,18 @@ public class ChatClient {
             }
 
             // Avisar al servidor que viene un archivo
-            sendMessage("FILE|" + fileName);
+            sendMessage("FILE|" + fileName +"|"+ fileSize);
+            try {
+                Thread.sleep(100); 
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt(); 
+            }
 
             // Enviar tamaño y datos
-            dataOut.writeInt(fileData.length);
             dataOut.write(fileData);
             dataOut.flush();
 
-            System.out.println("Enviando archivo: " + fileName + " (" + fileData.length + " bytes)");
+            System.out.println("Enviando archivo: " + fileName + " (" + fileSize + " bytes)");
 
         } catch (IOException e) {
             System.err.println("Error enviando archivo: " + e.getMessage());

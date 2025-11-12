@@ -72,6 +72,42 @@ public class ClientHandler implements Runnable {
                     break;
 
                 case "FILE":
+                     if (!authenticated) {
+                        sendMessage("ERROR|Debes iniciar sesión primero");
+                        return;
+                    }
+
+                    // Validar formato
+                    if (parts.length < 3) {
+                        sendMessage("ERROR|Formato incorrecto. Usa: FILE|nombre|tamaño");
+                        return;
+                    }
+
+                    String fileName = parts[1];
+                    int fileSize;
+                    try {
+                        fileSize = Integer.parseInt(parts[2]);
+                    } catch (NumberFormatException e) {
+                        sendMessage("ERROR|Tamaño de archivo inválido");
+                        return;
+                    }
+
+                    try {
+                        // Recibir bytes del archivo
+                        byte[] fileData = new byte[fileSize];
+                        dataIn.readFully(fileData);
+
+                        System.out.println("Archivo recibido de " + username + ": " + fileName + " (" + fileSize + " bytes)");
+
+                        // Notificar a otros clientes
+                        server.broadcastFile(fileName, fileData, this);
+
+                        sendMessage("SERVER|Archivo " + fileName + " enviado correctamente");
+
+                    } catch (IOException e) {
+                        sendMessage("ERROR|Error al recibir el archivo");
+                        System.err.println("Error al recibir archivo de " + username + ": " + e.getMessage());
+                    }
                     break;
 
                 case "LOGOUT":
@@ -128,8 +164,27 @@ private void handleLogin(String[] parts) {
         }
     }
 
-    // Implementar tranferencias de archivos
+
     public void sendFile(String fileName, byte[] fileData) {
+        try {
+            // Enviar encabezado
+            int fileSize =fileData.length;
+            sendMessage("FILE|" + fileName + "|" + fileSize);
+            try {
+                Thread.sleep(100); 
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt(); 
+            }
+            
+            // Enviar los bytes del archivo
+            dataOut.write(fileData);
+            dataOut.flush();
+
+            System.out.println("Enviando archivo " + fileName + " a " + username);
+
+        } catch (IOException e) {
+            System.err.println("Error enviando archivo a " + username + ": " + e.getMessage());
+        }
     }
 
 
