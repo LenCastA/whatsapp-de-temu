@@ -86,12 +86,9 @@ public class ChatServer {
     
     public void broadcastVideo(byte[] frame, ClientHandler sender){
         for (ClientHandler client : clients) {
-            // 🔹 ahora se incluye también al emisor
             if (client.getVideoSocket() != null && client.isAuthenticated()) {
                 try {
                     DataOutputStream out = new DataOutputStream(client.getVideoSocket().getOutputStream());
-
-                    // Enviar nombre del remitente
                     byte[] nameBytes = sender.getUsername().getBytes();
                     out.writeInt(nameBytes.length);
                     out.write(nameBytes);
@@ -158,7 +155,6 @@ public class ChatServer {
         }
     }
 
-    // main de prueba (puedes dejarlo o ignorarlo si usas Main.java)
     public static void main(String[] args) {
         ChatServer server = new ChatServer();
         Runtime.getRuntime().addShutdownHook(new Thread(server::shutdown));

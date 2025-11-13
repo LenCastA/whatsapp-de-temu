@@ -514,7 +514,6 @@ public class ChatClient {
             }
         }).start();
     }
-    // main de prueba (puedes usar Main.java también)
     public static void main(String[] args) {
         ChatClient client = new ChatClient();
         Runtime.getRuntime().addShutdownHook(new Thread(client::disconnect));
