@@ -8,7 +8,7 @@ target/
 *.ear
 *.log
 *.tmp
-
+!lib/opencv-4120.jar
 # ==========================
 # Configuración del IDE
 # ==========================
