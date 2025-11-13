@@ -1,6 +1,5 @@
 package com.mycompany.chat;
 
-import java.awt.Frame;
 import java.awt.image.BufferedImage;
 import java.io.*;
 import java.net.*;
