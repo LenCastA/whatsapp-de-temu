@@ -11,11 +11,13 @@ import javax.swing.ImageIcon;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.SwingUtilities;
+import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacv.Java2DFrameConverter;
 import org.bytedeco.javacv.OpenCVFrameGrabber;
-import org.opencv.core.*;
-import org.opencv.videoio.VideoCapture;
-import org.opencv.imgcodecs.Imgcodecs;
+import org.bytedeco.opencv.opencv_core.*;
+import org.bytedeco.opencv.opencv_videoio.VideoCapture;
+import static org.bytedeco.opencv.global.opencv_imgcodecs.*;
+
 
 public class ChatClient {
     private String host;
@@ -376,9 +378,10 @@ public class ChatClient {
         Mat frame = new Mat();
         try {
             while (videoActive && cam.read(frame)) {
-                MatOfByte mob = new MatOfByte();
-                Imgcodecs.imencode(".jpg", frame, mob);
-                byte[] bytes = mob.toArray();
+                BytePointer mob = new BytePointer();
+                imencode(".jpg", frame, mob);
+                byte[] bytes = new byte[(int) mob.limit()];
+                mob.get(bytes);
 
                 // Enviar el frame al servidor
                 videoOut.writeInt(bytes.length);
