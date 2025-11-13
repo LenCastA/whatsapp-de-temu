@@ -1,14 +1,19 @@
 package com.mycompany.chat;
 
+import java.awt.GridLayout;
 import java.awt.image.BufferedImage;
 import java.io.*;
 import java.net.*;
 import java.nio.file.*;
+import java.util.Map;
 import java.util.Scanner;
+import java.util.concurrent.ConcurrentHashMap;
 import javax.imageio.ImageIO;
 import javax.swing.ImageIcon;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.SwingUtilities;
 import org.bytedeco.javacv.Java2DFrameConverter;
 import org.bytedeco.javacv.OpenCVFrameGrabber;
@@ -31,6 +36,10 @@ public class ChatClient {
     private volatile boolean running;
     private boolean videoActive;
     private JLabel videoLabel;
+    
+    private final Map<String, JLabel> videoViews = new ConcurrentHashMap<>();
+    private final JFrame videoFrame = new JFrame("Videollamada");
+    private final JPanel videoPanel = new JPanel(new GridLayout(0, 2, 5, 5));
 
     // Constructor por defecto => localhost:9000
     public ChatClient() {
@@ -67,7 +76,7 @@ public class ChatClient {
             
             JFrame frame = new JFrame("Cliente de Video");
             videoLabel = new JLabel("Esperando video...");
-            frame.add(videoLabel);
+            frame.add(new JScrollPane(videoPanel));
             frame.setSize(640, 480);
             frame.setVisible(true);
             frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -388,7 +397,14 @@ public class ChatClient {
                 BufferedImage img = ImageIO.read(new ByteArrayInputStream(bytes));
                 if (img != null) {
                     SwingUtilities.invokeLater(() -> {
-                        videoLabel.setIcon(new ImageIcon(img));
+                        JLabel label = videoViews.computeIfAbsent("Yo", s -> {
+                            JLabel l = new JLabel();
+                            videoPanel.add(l);
+                            videoPanel.revalidate();
+                            videoPanel.repaint();
+                            return l;
+                        });
+                        label.setIcon(new ImageIcon(img));
                     });
                 }
 
@@ -403,21 +419,26 @@ public class ChatClient {
     private void receiveVideo() {
         try (DataInputStream videoIn = new DataInputStream(videoSocket.getInputStream())) {
             while (videoActive) {
-                int len;
-                try {
-                    len = videoIn.readInt(); // lee longitud del frame
-                } catch (EOFException e) {
-                    System.out.println("📴 Conexión de video cerrada por el servidor.");
-                    break;
-                }
+                int nameLen = videoIn.readInt();
+                byte[] nameBytes = new byte[nameLen];
+                videoIn.readFully(nameBytes);
+                String sender = new String(nameBytes);
 
-                byte[] bytes = new byte[len];
-                videoIn.readFully(bytes);
+                int frameLen = videoIn.readInt();
+                byte[] frame = new byte[frameLen];
+                videoIn.readFully(frame);
 
-                BufferedImage img = ImageIO.read(new ByteArrayInputStream(bytes));
+                BufferedImage img = ImageIO.read(new ByteArrayInputStream(frame));
                 if (img != null) {
                     SwingUtilities.invokeLater(() -> {
-                        videoLabel.setIcon(new ImageIcon(img));
+                        JLabel label = videoViews.computeIfAbsent(sender, s -> {
+                            JLabel l = new JLabel("Cargando...");
+                            videoPanel.add(l);
+                            videoPanel.revalidate();
+                            videoPanel.repaint();
+                            return l;
+                        });
+                        label.setIcon(new ImageIcon(img));
                     });
                 }
             }

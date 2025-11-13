@@ -19,6 +19,7 @@ public class ClientHandler implements Runnable {
     private volatile boolean running;
     
     public Socket getSocket(){return socket;}
+    public String getUsername(){return username;}
     public Socket getVideoSocket(){return videoClient;}
     public boolean getVideoActive(){return videoActive;}
 
@@ -246,10 +247,6 @@ private void handleVideoCommand() {
         } catch (IOException e) {
             System.err.println("Error cerrando conexión: " + e.getMessage());
         }
-    }
-
-    public String getUsername() {
-        return username;
     }
 
     public boolean isAuthenticated() {
