@@ -1,8 +1,13 @@
 package com.mycompany.chat;
 
-import java.io.*;
-import java.net.*;
-import java.sql.SQLException;
+import java.io.BufferedReader;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.net.Socket;
+import java.util.List;
 
 public class ClientHandler implements Runnable {
     private Socket socket;
@@ -15,6 +20,7 @@ public class ClientHandler implements Runnable {
     private Socket videoClient;
     private String username;
     private boolean videoActive = false;
+    private String videoRecipient = null; // Destinatario para video privado
     private boolean authenticated;
     private volatile boolean running;
     
@@ -61,7 +67,11 @@ public class ClientHandler implements Runnable {
             return;
         }
 
-        String[] parts = message.split("\\|", 3);
+        // Parsear comando (puede tener diferentes números de partes según el comando)
+        String[] parts = message.split("\\|");
+        if (parts.length == 0) {
+            return;
+        }
         String command = parts[0];
 
         try {
@@ -71,16 +81,48 @@ public class ClientHandler implements Runnable {
                     break;
 
                 case "MSG":
-                    if (authenticated && parts.length >= 2) {
-                        String msg = parts[1];
-                        System.out.println("[" + username + "]: " + msg);
-                        server.broadcast("MSG|" + username + "|" + msg, this);
+                    if (authenticated && parts.length >= 3) {
+                        // Formato: MSG|destinatario|mensaje
+                        String recipient = parts[1];
+                        String msg = parts[2];
+                        System.out.println("[" + username + " -> " + recipient + "]: " + msg);
+                        
+                        // Enviar mensaje privado
+                        boolean sent = server.sendPrivateMessage("MSG|" + username + "|" + msg, recipient, this);
+                        if (!sent) {
+                            sendMessage("ERROR|Usuario '" + recipient + "' no encontrado o no está conectado");
+                        } else {
+                            // Confirmar al emisor que el mensaje fue enviado
+                            sendMessage("OK|MSG|Mensaje enviado a " + recipient);
+                        }
                     } else if (!authenticated) {
+                        sendMessage("ERROR|Debes iniciar sesión primero");
+                    } else {
+                        sendMessage("ERROR|Formato incorrecto. Usa: MSG|destinatario|mensaje");
+                    }
+                    break;
+                    
+                case "USERS":
+                    if (authenticated) {
+                        List<String> users = server.getConnectedUsers(this);
+                        if (users.isEmpty()) {
+                            sendMessage("SERVER|No hay otros usuarios conectados");
+                        } else {
+                            StringBuilder userList = new StringBuilder("Usuarios conectados: ");
+                            for (int i = 0; i < users.size(); i++) {
+                                userList.append(users.get(i));
+                                if (i < users.size() - 1) {
+                                    userList.append(", ");
+                                }
+                            }
+                            sendMessage("SERVER|" + userList.toString());
+                        }
+                    } else {
                         sendMessage("ERROR|Debes iniciar sesión primero");
                     }
                     break;
                 case "VIDEO":
-                    handleVideoCommand();
+                    handleVideoCommand(parts);
                     break;
                 case "FILE":
                      if (!authenticated) {
@@ -88,16 +130,17 @@ public class ClientHandler implements Runnable {
                         return;
                     }
 
-                    // Validar formato
-                    if (parts.length < 3) {
-                        sendMessage("ERROR|Formato incorrecto. Usa: FILE|nombre|tamaño");
+                    // Validar formato: FILE|destinatario|nombre|tamaño
+                    if (parts.length < 4) {
+                        sendMessage("ERROR|Formato incorrecto. Usa: FILE|destinatario|nombre|tamaño");
                         return;
                     }
 
-                    String fileName = parts[1];
+                    String recipient = parts[1];
+                    String fileName = parts[2];
                     int fileSize;
                     try {
-                        fileSize = Integer.parseInt(parts[2]);
+                        fileSize = Integer.parseInt(parts[3]);
                     } catch (NumberFormatException e) {
                         sendMessage("ERROR|Tamaño de archivo inválido");
                         return;
@@ -108,12 +151,15 @@ public class ClientHandler implements Runnable {
                         byte[] fileData = new byte[fileSize];
                         dataIn.readFully(fileData);
 
-                        System.out.println("Archivo recibido de " + username + ": " + fileName + " (" + fileSize + " bytes)");
+                        System.out.println("Archivo recibido de " + username + " para " + recipient + ": " + fileName + " (" + fileSize + " bytes)");
 
-                        // Notificar a otros clientes
-                        server.broadcastFile(fileName, fileData, this);
-
-                        sendMessage("SERVER|Archivo " + fileName + " enviado correctamente");
+                        // Enviar archivo privado
+                        boolean sent = server.sendPrivateFile(fileName, fileData, recipient, this);
+                        if (sent) {
+                            sendMessage("SERVER|Archivo " + fileName + " enviado correctamente a " + recipient);
+                        } else {
+                            sendMessage("ERROR|Usuario '" + recipient + "' no encontrado o no está conectado");
+                        }
 
                     } catch (IOException e) {
                         sendMessage("ERROR|Error al recibir el archivo");
@@ -170,33 +216,68 @@ private void handleLogin(String[] parts) {
 }
 private void receiveVideo() {
     try {
-        while (videoActive && running) {
+        while (videoActive && running && videoRecipient != null) {
             int length = videoIn.readInt(); // tamaño del frame
             byte[] frame = new byte[length];
             videoIn.readFully(frame);
-            server.broadcastVideo(frame, this);
+            // Enviar video solo al destinatario privado
+            boolean sent = server.sendPrivateVideo(frame, videoRecipient, this);
+            if (!sent) {
+                System.out.println("Error: No se pudo enviar video a " + videoRecipient);
+                videoActive = false;
+                sendMessage("ERROR|No se pudo enviar video. El destinatario puede haberse desconectado.");
+                break;
+            }
         }
     } catch (IOException e) {
         System.out.println("Video finalizado para " + username);
     }
 }
-private void handleVideoCommand() {
-    if (!videoActive) {
-        try {
-            // ⚡ Inicializar video solo cuando se active
-            videoIn = new DataInputStream(videoClient.getInputStream());
-            videoActive = true;
-            sendMessage("SERVER|Video activado.");
-            new Thread(this::receiveVideo).start();
-        } catch (IOException e) {
-            sendMessage("ERROR|No se pudo iniciar el video: " + e.getMessage());
+
+private void handleVideoCommand(String[] parts) {
+    if (!authenticated) {
+        sendMessage("ERROR|Debes iniciar sesión primero");
+        return;
+    }
+    
+    // Formato: VIDEO|START|destinatario o VIDEO|STOP
+    if (parts.length >= 2 && "START".equals(parts[1])) {
+        if (parts.length < 3) {
+            sendMessage("ERROR|Formato incorrecto. Usa: VIDEO|START|destinatario");
+            return;
         }
-    } else {
+        
+        String recipient = parts[2];
+        
+        // Verificar que el destinatario existe
+        if (server.getClientByUsername(recipient) == null) {
+            sendMessage("ERROR|Usuario '" + recipient + "' no encontrado o no está conectado");
+            return;
+        }
+        
+        if (!videoActive) {
+            try {
+                // ⚡ Inicializar video solo cuando se active
+                videoIn = new DataInputStream(videoClient.getInputStream());
+                videoActive = true;
+                videoRecipient = recipient;
+                sendMessage("SERVER|Videollamada iniciada con " + recipient);
+                new Thread(this::receiveVideo).start();
+            } catch (IOException e) {
+                sendMessage("ERROR|No se pudo iniciar el video: " + e.getMessage());
+            }
+        } else {
+            sendMessage("ERROR|Ya hay una videollamada activa. Detén la actual primero.");
+        }
+    } else if (parts.length >= 2 && "STOP".equals(parts[1])) {
         videoActive = false;
-        sendMessage("SERVER|Video desactivado.");
+        videoRecipient = null;
+        sendMessage("SERVER|Videollamada detenida.");
         try {
             if (videoIn != null) videoIn.close();
         } catch (IOException ignored) {}
+    } else {
+        sendMessage("ERROR|Formato incorrecto. Usa: VIDEO|START|destinatario o VIDEO|STOP");
     }
 }
     public void sendMessage(String message) {
