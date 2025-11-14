@@ -2,12 +2,23 @@ package com.mycompany.chat;
 
 import java.awt.GridLayout;
 import java.awt.image.BufferedImage;
-import java.io.*;
-import java.net.*;
-import java.nio.file.*;
+import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.EOFException;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.net.Socket;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Map;
 import java.util.Scanner;
 import java.util.concurrent.ConcurrentHashMap;
+
 import javax.imageio.ImageIO;
 import javax.swing.ImageIcon;
 import javax.swing.JFrame;
@@ -15,13 +26,21 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.SwingUtilities;
-import org.bytedeco.javacpp.BytePointer;
+
 import org.bytedeco.javacv.Java2DFrameConverter;
 import org.bytedeco.javacv.OpenCVFrameGrabber;
-import org.bytedeco.opencv.opencv_core.*;
-import org.bytedeco.opencv.opencv_videoio.VideoCapture;
-import static org.bytedeco.opencv.global.opencv_imgcodecs.*;
+import org.opencv.core.Mat;
+import org.opencv.core.MatOfByte;
+import org.opencv.imgcodecs.Imgcodecs;
+import org.opencv.videoio.VideoCapture;
 
+import com.mycompany.chat.commands.ChangeRecipientCommand;
+import com.mycompany.chat.commands.ChatCommand;
+import com.mycompany.chat.commands.Command;
+import com.mycompany.chat.commands.ExitCommand;
+import com.mycompany.chat.commands.FileCommand;
+import com.mycompany.chat.commands.MenuCommandInvoker;
+import com.mycompany.chat.commands.VideoCommand;
 
 public class ChatClient {
     private String host;
@@ -279,45 +298,45 @@ public class ChatClient {
         }
     }
     
-    // Muestra el menú principal con opciones
+    // Muestra el menú principal con opciones usando el patrón Command
     private void showMainMenu() {
+        // Inicializar el invocador de comandos y registrar todos los comandos
+        MenuCommandInvoker invoker = new MenuCommandInvoker();
+        invoker.registerCommand("1", new ChatCommand(this, scanner));
+        invoker.registerCommand("2", new FileCommand(this, scanner));
+        invoker.registerCommand("3", new VideoCommand(this, scanner));
+        invoker.registerCommand("4", new ChangeRecipientCommand(this));
+        invoker.registerCommand("5", new ExitCommand(this));
+        
         while (running && currentRecipient != null && !currentRecipient.isEmpty()) {
             System.out.println("\n═══════════════════════════════════════════════════");
             System.out.println("              MENÚ PRINCIPAL");
             System.out.println("═══════════════════════════════════════════════════");
             System.out.println("Destinatario actual: " + currentRecipient);
             System.out.println("───────────────────────────────────────────────────");
-            System.out.println("[1] Enviar mensaje de chat");
-            System.out.println("[2] Enviar archivo");
-            System.out.println("[3] Iniciar videollamada");
-            System.out.println("[4] Cambiar destinatario");
-            System.out.println("[5] Salir");
+            
+            // Mostrar opciones dinámicamente desde los comandos registrados
+            for (Map.Entry<String, Command> entry : invoker.getCommands().entrySet()) {
+                System.out.println("[" + entry.getKey() + "] " + entry.getValue().getDescription());
+            }
+            
             System.out.println("═══════════════════════════════════════════════════");
             System.out.print("Selecciona una opción: ");
             
             String option = scanner.nextLine().trim();
             
-            switch (option) {
-                case "1":
-                    handleChatOption();
-                    break;
-                case "2":
-                    handleFileOption();
-                    break;
-                case "3":
-                    handleVideoOption();
-                    break;
-                case "4":
-                    currentRecipient = null;
-                    System.out.println("\nCambiando destinatario...\n");
-                    selectRecipientAndShowMenu();
-                    return;
-                case "5":
-                    sendMessage("LOGOUT");
-                    running = false;
-                    return;
-                default:
-                    System.out.println("\n⚠️  Opción inválida. Por favor selecciona 1-5.\n");
+            // Ejecutar comando usando el invocador
+            boolean executed = invoker.executeCommand(option);
+            
+            if (!executed) {
+                System.out.println("\n⚠️  Opción inválida. Por favor selecciona una opción válida.\n");
+            } else if ("4".equals(option)) {
+                // Si se cambió el destinatario, volver a seleccionar
+                selectRecipientAndShowMenu();
+                return;
+            } else if ("5".equals(option)) {
+                // Si se salió, terminar el bucle
+                return;
             }
         }
     }
@@ -484,8 +503,41 @@ public class ChatClient {
         }
     }
 
+    // Métodos públicos para que los comandos puedan acceder
+    public String getCurrentRecipient() {
+        return currentRecipient;
+    }
+    
+    public void setCurrentRecipient(String recipient) {
+        this.currentRecipient = recipient;
+    }
+    
+    public boolean isRunning() {
+        return running;
+    }
+    
+    public void setRunning(boolean running) {
+        this.running = running;
+    }
+    
+    public boolean isVideoActive() {
+        return videoActive;
+    }
+    
+    public void startVideoCall(String recipient) {
+        videoActive = true;
+        sendMessage("VIDEO|START|" + recipient);
+        new Thread(this::sendVideo).start();
+        new Thread(this::receiveVideo).start();
+    }
+    
+    public void stopVideoCall() {
+        videoActive = false;
+        sendMessage("VIDEO|STOP");
+    }
+    
     // Envía un archivo al servidor (al destinatario actual)
-    private void sendFile(String filePath) {
+    public void sendFile(String filePath) {
         if (currentRecipient == null || currentRecipient.isEmpty()) {
             System.out.println("⚠️  Error: No has seleccionado un destinatario.");
             return;
@@ -533,7 +585,7 @@ public class ChatClient {
     }
 
     // Envía un mensaje al servidor
-    private void sendMessage(String message) {
+    public void sendMessage(String message) {
         if (out != null && !socket.isClosed()) {
             out.println(message);
         }
