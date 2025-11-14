@@ -1,8 +1,13 @@
 package com.mycompany.chat;
 
-import java.io.*;
-import java.net.*;
-import java.sql.SQLException;
+import java.io.BufferedReader;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.net.Socket;
+import java.util.List;
 
 public class ClientHandler implements Runnable {
     private Socket socket;
@@ -61,7 +66,11 @@ public class ClientHandler implements Runnable {
             return;
         }
 
-        String[] parts = message.split("\\|", 3);
+        // Parsear comando (puede tener diferentes números de partes según el comando)
+        String[] parts = message.split("\\|");
+        if (parts.length == 0) {
+            return;
+        }
         String command = parts[0];
 
         try {
@@ -71,11 +80,43 @@ public class ClientHandler implements Runnable {
                     break;
 
                 case "MSG":
-                    if (authenticated && parts.length >= 2) {
-                        String msg = parts[1];
-                        System.out.println("[" + username + "]: " + msg);
-                        server.broadcast("MSG|" + username + "|" + msg, this);
+                    if (authenticated && parts.length >= 3) {
+                        // Formato: MSG|destinatario|mensaje
+                        String recipient = parts[1];
+                        String msg = parts[2];
+                        System.out.println("[" + username + " -> " + recipient + "]: " + msg);
+                        
+                        // Enviar mensaje privado
+                        boolean sent = server.sendPrivateMessage("MSG|" + username + "|" + msg, recipient, this);
+                        if (!sent) {
+                            sendMessage("ERROR|Usuario '" + recipient + "' no encontrado o no está conectado");
+                        } else {
+                            // Confirmar al emisor que el mensaje fue enviado
+                            sendMessage("OK|MSG|Mensaje enviado a " + recipient);
+                        }
                     } else if (!authenticated) {
+                        sendMessage("ERROR|Debes iniciar sesión primero");
+                    } else {
+                        sendMessage("ERROR|Formato incorrecto. Usa: MSG|destinatario|mensaje");
+                    }
+                    break;
+                    
+                case "USERS":
+                    if (authenticated) {
+                        List<String> users = server.getConnectedUsers(this);
+                        if (users.isEmpty()) {
+                            sendMessage("SERVER|No hay otros usuarios conectados");
+                        } else {
+                            StringBuilder userList = new StringBuilder("Usuarios conectados: ");
+                            for (int i = 0; i < users.size(); i++) {
+                                userList.append(users.get(i));
+                                if (i < users.size() - 1) {
+                                    userList.append(", ");
+                                }
+                            }
+                            sendMessage("SERVER|" + userList.toString());
+                        }
+                    } else {
                         sendMessage("ERROR|Debes iniciar sesión primero");
                     }
                     break;
@@ -88,16 +129,17 @@ public class ClientHandler implements Runnable {
                         return;
                     }
 
-                    // Validar formato
-                    if (parts.length < 3) {
-                        sendMessage("ERROR|Formato incorrecto. Usa: FILE|nombre|tamaño");
+                    // Validar formato: FILE|destinatario|nombre|tamaño
+                    if (parts.length < 4) {
+                        sendMessage("ERROR|Formato incorrecto. Usa: FILE|destinatario|nombre|tamaño");
                         return;
                     }
 
-                    String fileName = parts[1];
+                    String recipient = parts[1];
+                    String fileName = parts[2];
                     int fileSize;
                     try {
-                        fileSize = Integer.parseInt(parts[2]);
+                        fileSize = Integer.parseInt(parts[3]);
                     } catch (NumberFormatException e) {
                         sendMessage("ERROR|Tamaño de archivo inválido");
                         return;
@@ -108,12 +150,15 @@ public class ClientHandler implements Runnable {
                         byte[] fileData = new byte[fileSize];
                         dataIn.readFully(fileData);
 
-                        System.out.println("Archivo recibido de " + username + ": " + fileName + " (" + fileSize + " bytes)");
+                        System.out.println("Archivo recibido de " + username + " para " + recipient + ": " + fileName + " (" + fileSize + " bytes)");
 
-                        // Notificar a otros clientes
-                        server.broadcastFile(fileName, fileData, this);
-
-                        sendMessage("SERVER|Archivo " + fileName + " enviado correctamente");
+                        // Enviar archivo privado
+                        boolean sent = server.sendPrivateFile(fileName, fileData, recipient, this);
+                        if (sent) {
+                            sendMessage("SERVER|Archivo " + fileName + " enviado correctamente a " + recipient);
+                        } else {
+                            sendMessage("ERROR|Usuario '" + recipient + "' no encontrado o no está conectado");
+                        }
 
                     } catch (IOException e) {
                         sendMessage("ERROR|Error al recibir el archivo");

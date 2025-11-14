@@ -36,6 +36,7 @@ public class ChatClient {
     private volatile boolean running;
     private boolean videoActive;
     private JLabel videoLabel;
+    private String currentRecipient; // Destinatario actual para mensajes
     
     private final Map<String, JLabel> videoViews = new ConcurrentHashMap<>();
     private final JFrame videoFrame = new JFrame("Videollamada");
@@ -141,25 +142,33 @@ public class ChatClient {
 
     // Procesa mensajes entrantes del servidor
     private void processIncomingMessage(String message) {
-        String[] parts = message.split("\\|", 3);
+        String[] parts = message.split("\\|", 4);
         String type = parts[0];
 
         switch (type) {
             case "SERVER":
-                System.out.println("[SERVIDOR]: " + parts[1]);
+                System.out.println("[SERVIDOR]: " + (parts.length > 1 ? parts[1] : ""));
                 break;
 
             case "OK":
                 if (parts.length >= 2 && "LOGIN".equals(parts[1])) {
                     System.out.println("\n" + (parts.length > 2 ? parts[2] : "Login exitoso"));
                     System.out.println("\nComandos disponibles:");
-                    System.out.println("  - Escribe tu mensaje y presiona Enter");
-                    System.out.println("  - /file <ruta> - Enviar archivo");
+                    System.out.println("  - /chat <usuario> - Seleccionar destinatario");
+                    System.out.println("  - /users - Ver usuarios conectados");
+                    System.out.println("  - Escribe tu mensaje y presiona Enter (solo si has seleccionado un destinatario)");
+                    System.out.println("  - /file <ruta> - Enviar archivo al destinatario actual");
                     System.out.println("  - /logout - Cerrar sesion");
                     System.out.println("  - /help - Mostrar ayuda");
                     System.out.println("─────────────────────────────────────────\n");
-                } else {
-                    System.out.println("" + (parts.length > 1 ? parts[1] : "OK"));
+                    System.out.println("⚠️  IMPORTANTE: Primero selecciona un destinatario con /chat <usuario>\n");
+                } else if (parts.length >= 2 && "MSG".equals(parts[1])) {
+                    // Confirmación de mensaje enviado
+                    if (parts.length > 2) {
+                        System.out.println("✓ " + parts[2]);
+                    }
+                } else if (parts.length > 1) {
+                    System.out.println("✓ " + parts[1]);
                 }
                 break;
 
@@ -171,6 +180,7 @@ public class ChatClient {
                 if (parts.length >= 3) {
                     String sender = parts[1];
                     String msg = parts[2];
+                    // Mostrar mensaje privado recibido
                     System.out.println("[" + sender + "]: " + msg);
                 }
                 break;
@@ -235,7 +245,14 @@ public class ChatClient {
                 if (input.startsWith("/")) {
                     handleCommand(input);
                 } else {
-                    sendMessage("MSG|" + input);
+                    // Enviar mensaje privado al destinatario actual
+                    if (currentRecipient == null || currentRecipient.isEmpty()) {
+                        System.out.println("⚠️  Error: No has seleccionado un destinatario.");
+                        System.out.println("   Usa /chat <usuario> para seleccionar un destinatario primero.");
+                        System.out.println("   Usa /users para ver los usuarios disponibles.\n");
+                    } else {
+                        sendMessage("MSG|" + currentRecipient + "|" + input);
+                    }
                 }
 
             } catch (Exception e) {
@@ -252,14 +269,37 @@ public class ChatClient {
         String command = parts[0].toLowerCase();
 
         switch (command) {
+            case "/chat":
+                if (parts.length < 2) {
+                    System.out.println("Uso: /chat <usuario>");
+                    System.out.println("Ejemplo: /chat juan");
+                    if (currentRecipient != null) {
+                        System.out.println("Destinatario actual: " + currentRecipient);
+                    }
+                } else {
+                    String newRecipient = parts[1].trim();
+                    currentRecipient = newRecipient;
+                    System.out.println("✓ Destinatario seleccionado: " + currentRecipient);
+                    System.out.println("  Ahora puedes escribir mensajes que solo verá " + currentRecipient + "\n");
+                }
+                break;
+                
+            case "/users":
+                sendMessage("USERS");
+                break;
+                
             case "/logout":
                 sendMessage("LOGOUT");
                 running = false;
                 break;
 
             case "/file":
-                if (parts.length < 2) {
+                if (currentRecipient == null || currentRecipient.isEmpty()) {
+                    System.out.println("⚠️  Error: No has seleccionado un destinatario.");
+                    System.out.println("   Usa /chat <usuario> para seleccionar un destinatario primero.");
+                } else if (parts.length < 2) {
                     System.out.println("Uso: /file <ruta_del_archivo>");
+                    System.out.println("El archivo se enviará a: " + currentRecipient);
                 } else {
                     sendFile(parts[1]);
                 }
@@ -268,6 +308,7 @@ public class ChatClient {
             case "/help":
                 showHelp();
                 break;
+                
             case "/video":
                 if (!videoActive) {
                     videoActive = true;
@@ -280,7 +321,6 @@ public class ChatClient {
                     sendMessage("VIDEO|STOP");
                     System.out.println("📴 Video detenido.");
                 }
-
                 break;
 
             default:
@@ -289,8 +329,13 @@ public class ChatClient {
         }
     }
 
-    // Envía un archivo al servidor
+    // Envía un archivo al servidor (al destinatario actual)
     private void sendFile(String filePath) {
+        if (currentRecipient == null || currentRecipient.isEmpty()) {
+            System.out.println("⚠️  Error: No has seleccionado un destinatario.");
+            return;
+        }
+        
         try {
             Path path = Paths.get(filePath);
 
@@ -313,8 +358,8 @@ public class ChatClient {
                 return;
             }
 
-            // Avisar al servidor que viene un archivo
-            sendMessage("FILE|" + fileName +"|"+ fileSize);
+            // Avisar al servidor que viene un archivo (formato: FILE|destinatario|nombre|tamaño)
+            sendMessage("FILE|" + currentRecipient + "|" + fileName + "|" + fileSize);
             try {
                 Thread.sleep(100); 
             } catch (InterruptedException e) {
@@ -325,7 +370,7 @@ public class ChatClient {
             dataOut.write(fileData);
             dataOut.flush();
 
-            System.out.println("Enviando archivo: " + fileName + " (" + fileSize + " bytes)");
+            System.out.println("Enviando archivo a " + currentRecipient + ": " + fileName + " (" + fileSize + " bytes)");
 
         } catch (IOException e) {
             System.err.println("Error enviando archivo: " + e.getMessage());
@@ -343,11 +388,22 @@ public class ChatClient {
         System.out.println("\n─────────────────────────────────────────");
         System.out.println("COMANDOS DISPONIBLES:");
         System.out.println("─────────────────────────────────────────");
+        System.out.println("  /chat <usuario>");
+        System.out.println("    Selecciona el destinatario para tus mensajes");
+        System.out.println("    Ejemplo: /chat juan");
+        System.out.println();
+        System.out.println("  /users");
+        System.out.println("    Muestra la lista de usuarios conectados");
+        System.out.println();
         System.out.println("  Mensaje normal:");
-        System.out.println("    Simplemente escribe tu mensaje y presiona Enter");
+        System.out.println("    Escribe tu mensaje y presiona Enter");
+        System.out.println("    (Solo funciona si has seleccionado un destinatario)");
         System.out.println();
         System.out.println("  /file <ruta>");
-        System.out.println("    Envía un archivo a todos los usuarios");
+        System.out.println("    Envía un archivo al destinatario actual");
+        System.out.println();
+        System.out.println("  /video");
+        System.out.println("    Activa/desactiva la videollamada");
         System.out.println();
         System.out.println("  /logout");
         System.out.println("    Cierra la sesión y sale del chat");
@@ -355,6 +411,9 @@ public class ChatClient {
         System.out.println("  /help");
         System.out.println("    Muestra esta ayuda");
         System.out.println("─────────────────────────────────────────\n");
+        if (currentRecipient != null) {
+            System.out.println("Destinatario actual: " + currentRecipient + "\n");
+        }
     }
 
     // Desconecta del servidor

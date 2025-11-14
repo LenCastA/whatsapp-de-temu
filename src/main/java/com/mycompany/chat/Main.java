@@ -1,41 +1,63 @@
 package com.mycompany.chat;
 
-import java.io.*;
 import java.util.Scanner;
 
 public class Main {
     private static final Scanner scanner = new Scanner(System.in);
     static {
-        System.load(System.getProperty("user.dir") + "/lib/native/opencv_java4120.dll");
+        try {
+            // Intentar cargar OpenCV nativo (opcional, solo necesario para video)
+            String dllPath = System.getProperty("user.dir") + "/lib/native/opencv_java4120.dll";
+            System.load(dllPath);
+            System.out.println("OpenCV nativo cargado correctamente.");
+        } catch (UnsatisfiedLinkError e) {
+            // Si no se puede cargar, el chat seguirá funcionando sin video
+            System.err.println("Advertencia: No se pudo cargar OpenCV nativo. El video no estará disponible.");
+            System.err.println("  Ruta intentada: " + System.getProperty("user.dir") + "/lib/native/opencv_java4120.dll");
+            System.err.println("  El chat funcionará normalmente, pero sin funcionalidad de video.\n");
+        } catch (Exception e) {
+            System.err.println("Advertencia: Error al cargar OpenCV: " + e.getMessage());
+            System.err.println("  El chat funcionará normalmente, pero sin funcionalidad de video.\n");
+        }
     }
     public static void main(String[] args) {
-        while (true) {
-            mostrarMenu();
-            String opcion = scanner.nextLine().trim();
+        try {
+            while (true) {
+                mostrarMenu();
+                String opcion = scanner.nextLine().trim();
 
-            switch (opcion) {
-                case "1":
-                    configurarBaseDatos();
-                    break;
-                case "2":
-                    iniciarServidor();
-                    break;
-                case "3":
-                    iniciarCliente();
-                    break;
-                case "4":
-                    verificarConexionDB();
-                    break;
-                case "5":
-                    System.out.println("\n¡Hasta luego!");
-                    System.exit(0);
-                    break;
-                case "6":
-                    registrarUsuario();
-                    break;
-                default:
-                    System.out.println("\nOpcion invalida. Intenta de nuevo.\n");
+                switch (opcion) {
+                    case "1":
+                        configurarBaseDatos();
+                        break;
+                    case "2":
+                        iniciarServidor();
+                        break;
+                    case "3":
+                        iniciarCliente();
+                        break;
+                    case "4":
+                        verificarConexionDB();
+                        break;
+                    case "5":
+                        System.out.println("\n¡Hasta luego!");
+                        System.exit(0);
+                        break;
+                    case "6":
+                        registrarUsuario();
+                        break;
+                    default:
+                        System.out.println("\nOpcion invalida. Intenta de nuevo.\n");
+                }
             }
+        } catch (Exception e) {
+            System.err.println("\nError fatal en la aplicación: " + e.getMessage());
+            e.printStackTrace();
+            System.err.println("\nPresiona Enter para salir...");
+            try {
+                scanner.nextLine();
+            } catch (Exception ignored) {}
+            System.exit(1);
         }
     }
 
