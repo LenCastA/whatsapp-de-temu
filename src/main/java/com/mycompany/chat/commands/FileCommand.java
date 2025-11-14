@@ -1,7 +1,8 @@
 package com.mycompany.chat.commands;
 
-import com.mycompany.chat.ChatClient;
 import java.util.Scanner;
+
+import com.mycompany.chat.ChatClient;
 
 /**
  * Comando para enviar archivos de forma privada.
