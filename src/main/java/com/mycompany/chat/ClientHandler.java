@@ -20,6 +20,7 @@ public class ClientHandler implements Runnable {
     private Socket videoClient;
     private String username;
     private boolean videoActive = false;
+    private String videoRecipient = null; // Destinatario para video privado
     private boolean authenticated;
     private volatile boolean running;
     
@@ -121,7 +122,7 @@ public class ClientHandler implements Runnable {
                     }
                     break;
                 case "VIDEO":
-                    handleVideoCommand();
+                    handleVideoCommand(parts);
                     break;
                 case "FILE":
                      if (!authenticated) {
@@ -215,33 +216,68 @@ private void handleLogin(String[] parts) {
 }
 private void receiveVideo() {
     try {
-        while (videoActive && running) {
+        while (videoActive && running && videoRecipient != null) {
             int length = videoIn.readInt(); // tamaño del frame
             byte[] frame = new byte[length];
             videoIn.readFully(frame);
-            server.broadcastVideo(frame, this);
+            // Enviar video solo al destinatario privado
+            boolean sent = server.sendPrivateVideo(frame, videoRecipient, this);
+            if (!sent) {
+                System.out.println("Error: No se pudo enviar video a " + videoRecipient);
+                videoActive = false;
+                sendMessage("ERROR|No se pudo enviar video. El destinatario puede haberse desconectado.");
+                break;
+            }
         }
     } catch (IOException e) {
         System.out.println("Video finalizado para " + username);
     }
 }
-private void handleVideoCommand() {
-    if (!videoActive) {
-        try {
-            // ⚡ Inicializar video solo cuando se active
-            videoIn = new DataInputStream(videoClient.getInputStream());
-            videoActive = true;
-            sendMessage("SERVER|Video activado.");
-            new Thread(this::receiveVideo).start();
-        } catch (IOException e) {
-            sendMessage("ERROR|No se pudo iniciar el video: " + e.getMessage());
+
+private void handleVideoCommand(String[] parts) {
+    if (!authenticated) {
+        sendMessage("ERROR|Debes iniciar sesión primero");
+        return;
+    }
+    
+    // Formato: VIDEO|START|destinatario o VIDEO|STOP
+    if (parts.length >= 2 && "START".equals(parts[1])) {
+        if (parts.length < 3) {
+            sendMessage("ERROR|Formato incorrecto. Usa: VIDEO|START|destinatario");
+            return;
         }
-    } else {
+        
+        String recipient = parts[2];
+        
+        // Verificar que el destinatario existe
+        if (server.getClientByUsername(recipient) == null) {
+            sendMessage("ERROR|Usuario '" + recipient + "' no encontrado o no está conectado");
+            return;
+        }
+        
+        if (!videoActive) {
+            try {
+                // ⚡ Inicializar video solo cuando se active
+                videoIn = new DataInputStream(videoClient.getInputStream());
+                videoActive = true;
+                videoRecipient = recipient;
+                sendMessage("SERVER|Videollamada iniciada con " + recipient);
+                new Thread(this::receiveVideo).start();
+            } catch (IOException e) {
+                sendMessage("ERROR|No se pudo iniciar el video: " + e.getMessage());
+            }
+        } else {
+            sendMessage("ERROR|Ya hay una videollamada activa. Detén la actual primero.");
+        }
+    } else if (parts.length >= 2 && "STOP".equals(parts[1])) {
         videoActive = false;
-        sendMessage("SERVER|Video desactivado.");
+        videoRecipient = null;
+        sendMessage("SERVER|Videollamada detenida.");
         try {
             if (videoIn != null) videoIn.close();
         } catch (IOException ignored) {}
+    } else {
+        sendMessage("ERROR|Formato incorrecto. Usa: VIDEO|START|destinatario o VIDEO|STOP");
     }
 }
     public void sendMessage(String message) {

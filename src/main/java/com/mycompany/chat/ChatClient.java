@@ -37,6 +37,7 @@ public class ChatClient {
     private boolean videoActive;
     private JLabel videoLabel;
     private String currentRecipient; // Destinatario actual para mensajes
+    private volatile boolean loginSuccessful = false; // Flag para sincronizar login
     
     private final Map<String, JLabel> videoViews = new ConcurrentHashMap<>();
     private final JFrame videoFrame = new JFrame("Videollamada");
@@ -108,12 +109,22 @@ public class ChatClient {
             // Enviar login al servidor según nuevo formato
             sendMessage("LOGIN|" + username + "|" + password);
 
-            // Esperar respuesta
-            Thread.sleep(1000);
+            // Esperar respuesta del login (máximo 5 segundos)
+            int attempts = 0;
+            while (!loginSuccessful && attempts < 50) {
+                Thread.sleep(100);
+                attempts++;
+            }
+            
+            if (!loginSuccessful) {
+                System.err.println("Error: No se recibió confirmación de login. Cerrando...");
+                return;
+            }
+            
             System.out.println("-------------------------------------\n");
-
-            // Manejar input del usuario
-            handleUserInput();
+            
+            // Ahora pedir que elija destinatario
+            selectRecipientAndShowMenu();
 
         } catch (IOException e) {
             System.err.println("Error de conexión: " + e.getMessage());
@@ -153,15 +164,10 @@ public class ChatClient {
             case "OK":
                 if (parts.length >= 2 && "LOGIN".equals(parts[1])) {
                     System.out.println("\n" + (parts.length > 2 ? parts[2] : "Login exitoso"));
-                    System.out.println("\nComandos disponibles:");
-                    System.out.println("  - /chat <usuario> - Seleccionar destinatario");
-                    System.out.println("  - /users - Ver usuarios conectados");
-                    System.out.println("  - Escribe tu mensaje y presiona Enter (solo si has seleccionado un destinatario)");
-                    System.out.println("  - /file <ruta> - Enviar archivo al destinatario actual");
-                    System.out.println("  - /logout - Cerrar sesion");
-                    System.out.println("  - /help - Mostrar ayuda");
-                    System.out.println("─────────────────────────────────────────\n");
-                    System.out.println("⚠️  IMPORTANTE: Primero selecciona un destinatario con /chat <usuario>\n");
+                    System.out.println("\n═══════════════════════════════════════════════════");
+                    System.out.println("  ¡Bienvenido! Ahora debes seleccionar un destinatario");
+                    System.out.println("═══════════════════════════════════════════════════\n");
+                    loginSuccessful = true; // Marcar login como exitoso
                 } else if (parts.length >= 2 && "MSG".equals(parts[1])) {
                     // Confirmación de mensaje enviado
                     if (parts.length > 2) {
@@ -232,7 +238,163 @@ public class ChatClient {
             }
     }
 
-    // Maneja la entrada del usuario
+    // Selecciona destinatario y muestra el menú principal
+    private void selectRecipientAndShowMenu() {
+        while (running && (currentRecipient == null || currentRecipient.isEmpty())) {
+            System.out.println("═══════════════════════════════════════════════════");
+            System.out.println("           SELECCIONAR DESTINATARIO");
+            System.out.println("═══════════════════════════════════════════════════\n");
+            
+            // Solicitar lista de usuarios
+            sendMessage("USERS");
+            
+            // Esperar un momento para recibir la lista
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            
+            System.out.print("\nIngresa el nombre del destinatario (o 'salir' para cerrar): ");
+            String input = scanner.nextLine().trim();
+            
+            if (input.equalsIgnoreCase("salir") || input.equalsIgnoreCase("exit")) {
+                sendMessage("LOGOUT");
+                running = false;
+                return;
+            }
+            
+            if (!input.isEmpty()) {
+                currentRecipient = input;
+                System.out.println("\n✓ Destinatario seleccionado: " + currentRecipient);
+                System.out.println("═══════════════════════════════════════════════════\n");
+                
+                // Mostrar menú principal
+                showMainMenu();
+            } else {
+                System.out.println("⚠️  Por favor ingresa un nombre de usuario válido.\n");
+            }
+        }
+    }
+    
+    // Muestra el menú principal con opciones
+    private void showMainMenu() {
+        while (running && currentRecipient != null && !currentRecipient.isEmpty()) {
+            System.out.println("\n═══════════════════════════════════════════════════");
+            System.out.println("              MENÚ PRINCIPAL");
+            System.out.println("═══════════════════════════════════════════════════");
+            System.out.println("Destinatario actual: " + currentRecipient);
+            System.out.println("───────────────────────────────────────────────────");
+            System.out.println("[1] Enviar mensaje de chat");
+            System.out.println("[2] Enviar archivo");
+            System.out.println("[3] Iniciar videollamada");
+            System.out.println("[4] Cambiar destinatario");
+            System.out.println("[5] Salir");
+            System.out.println("═══════════════════════════════════════════════════");
+            System.out.print("Selecciona una opción: ");
+            
+            String option = scanner.nextLine().trim();
+            
+            switch (option) {
+                case "1":
+                    handleChatOption();
+                    break;
+                case "2":
+                    handleFileOption();
+                    break;
+                case "3":
+                    handleVideoOption();
+                    break;
+                case "4":
+                    currentRecipient = null;
+                    System.out.println("\nCambiando destinatario...\n");
+                    selectRecipientAndShowMenu();
+                    return;
+                case "5":
+                    sendMessage("LOGOUT");
+                    running = false;
+                    return;
+                default:
+                    System.out.println("\n⚠️  Opción inválida. Por favor selecciona 1-5.\n");
+            }
+        }
+    }
+    
+    // Maneja la opción de chat
+    private void handleChatOption() {
+        System.out.println("\n───────────────────────────────────────────────────");
+        System.out.println("           ENVIAR MENSAJE DE CHAT");
+        System.out.println("───────────────────────────────────────────────────");
+        System.out.println("Destinatario: " + currentRecipient);
+        System.out.println("(Escribe 'volver' para regresar al menú)\n");
+        
+        while (running && currentRecipient != null) {
+            System.out.print("Mensaje: ");
+            String message = scanner.nextLine().trim();
+            
+            if (message.equalsIgnoreCase("volver")) {
+                break;
+            }
+            
+            if (!message.isEmpty()) {
+                sendMessage("MSG|" + currentRecipient + "|" + message);
+            }
+        }
+    }
+    
+    // Maneja la opción de archivo
+    private void handleFileOption() {
+        System.out.println("\n───────────────────────────────────────────────────");
+        System.out.println("              ENVIAR ARCHIVO");
+        System.out.println("───────────────────────────────────────────────────");
+        System.out.println("Destinatario: " + currentRecipient);
+        System.out.print("Ruta del archivo (o 'volver' para regresar): ");
+        
+        String filePath = scanner.nextLine().trim();
+        
+        if (filePath.equalsIgnoreCase("volver")) {
+            return;
+        }
+        
+        if (!filePath.isEmpty()) {
+            sendFile(filePath);
+        } else {
+            System.out.println("⚠️  Ruta de archivo no válida.\n");
+        }
+    }
+    
+    // Maneja la opción de video
+    private void handleVideoOption() {
+        System.out.println("\n───────────────────────────────────────────────────");
+        System.out.println("            VIDELLAMADA");
+        System.out.println("───────────────────────────────────────────────────");
+        System.out.println("Destinatario: " + currentRecipient);
+        
+        if (!videoActive) {
+            System.out.println("\nIniciando videollamada con " + currentRecipient + "...");
+            videoActive = true;
+            // Enviar comando de video privado al servidor
+            sendMessage("VIDEO|START|" + currentRecipient);
+            new Thread(this::sendVideo).start();
+            new Thread(this::receiveVideo).start();
+            System.out.println("📹 Videollamada activada. Escribe 'detener' para finalizar.\n");
+            
+            // Esperar comando para detener
+            while (videoActive && running) {
+                String input = scanner.nextLine().trim();
+                if (input.equalsIgnoreCase("detener") || input.equalsIgnoreCase("stop")) {
+                    videoActive = false;
+                    sendMessage("VIDEO|STOP");
+                    System.out.println("📴 Videollamada detenida.\n");
+                    break;
+                }
+            }
+        } else {
+            System.out.println("⚠️  Ya hay una videollamada activa. Detén la actual primero.\n");
+        }
+    }
+
+    // Maneja la entrada del usuario (método antiguo, ahora no se usa directamente)
     private void handleUserInput() {
         while (running) {
             try {
@@ -310,17 +472,8 @@ public class ChatClient {
                 break;
                 
             case "/video":
-                if (!videoActive) {
-                    videoActive = true;
-                    sendMessage("VIDEO|START"); // avisar al servidor
-                    new Thread(this::sendVideo).start();     // 👈 empieza a enviar cámara
-                    new Thread(this::receiveVideo).start();  // 👈 empieza a recibir frames
-                    System.out.println("📹 Video activado.");
-                } else {
-                    videoActive = false;
-                    sendMessage("VIDEO|STOP");
-                    System.out.println("📴 Video detenido.");
-                }
+                // El video ahora se maneja desde el menú principal
+                System.out.println("⚠️  Usa el menú principal (opción 3) para iniciar videollamada.");
                 break;
 
             default:

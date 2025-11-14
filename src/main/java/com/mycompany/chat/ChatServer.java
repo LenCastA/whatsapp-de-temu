@@ -118,6 +118,7 @@ public class ChatServer {
         return null;
     }
     
+    // Envía video a todos los clientes (método antiguo, mantenido para compatibilidad)
     public void broadcastVideo(byte[] frame, ClientHandler sender){
         for (ClientHandler client : clients) {
             if (client.getVideoSocket() != null && client.isAuthenticated()) {
@@ -136,6 +137,29 @@ public class ChatServer {
                 }
             }
         }
+    }
+    
+    // Envía video privado a un destinatario específico
+    public boolean sendPrivateVideo(byte[] frame, String recipient, ClientHandler sender) {
+        ClientHandler target = getClientByUsername(recipient);
+        if (target != null && target.isAuthenticated() && target.getVideoSocket() != null) {
+            try {
+                DataOutputStream out = new DataOutputStream(target.getVideoSocket().getOutputStream());
+                byte[] nameBytes = sender.getUsername().getBytes();
+                out.writeInt(nameBytes.length);
+                out.write(nameBytes);
+
+                // Enviar longitud del frame y el frame mismo
+                out.writeInt(frame.length);
+                out.write(frame);
+                out.flush();
+                return true;
+            } catch (IOException e) {
+                System.err.println("Error enviando frame a " + recipient + ": " + e.getMessage());
+                return false;
+            }
+        }
+        return false;
     }
     // Envía un archivo a todos los clientes excepto al emisor (para compatibilidad)
     public void broadcastFile(String fileName, byte[] fileData, ClientHandler sender) {
