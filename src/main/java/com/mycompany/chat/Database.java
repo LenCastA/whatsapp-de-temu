@@ -3,7 +3,6 @@ package com.mycompany.chat;
 import java.sql.*;
 
 public class Database {
-    // Tratar de dinamizar
     private static final String URL = "jdbc:mysql://localhost:3306/chatdb?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
     private static String USER = "root";
     private static String PASS = "root";
@@ -28,7 +27,6 @@ public class Database {
         return DriverManager.getConnection(URL, USER, PASS);
     }
 
-    // Autenticación usando PreparedStatement (sin SQL injection)
     public static boolean authenticate(String username, String password) {
         if (username == null || password == null ||
             username.isEmpty() || password.isEmpty()) {

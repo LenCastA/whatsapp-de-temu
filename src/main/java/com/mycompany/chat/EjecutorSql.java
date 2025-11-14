@@ -33,10 +33,8 @@ public class EjecutorSql {
         try (Connection conn = DriverManager.getConnection(url, usuario, contraseña)) {
             conn.setAutoCommit(true);
 
-            // 📖 Leer el archivo completo
             String scriptSQL = new String(Files.readAllBytes(Paths.get(rutaArchivo)));
 
-            // 🧩 Ejecutar varias sentencias separadas por ';'
             String[] sentencias = scriptSQL.split(";");
             for (String sentencia : sentencias) {
                 sentencia = sentencia.trim();
