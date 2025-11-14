@@ -185,7 +185,7 @@ private static void mostrarMenu() {
     private static void pausar() {
         System.out.println("\nPresiona Enter para continuar...");
         scanner.nextLine();
-    }
+    } 
     private static void registrarUsuario() {
         System.out.println("\nRegistro de nuevo usuario");
         System.out.println("-----------------------------------------------------");
