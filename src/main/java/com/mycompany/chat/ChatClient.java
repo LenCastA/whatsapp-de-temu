@@ -650,10 +650,9 @@ public class ChatClient {
         Mat frame = new Mat();
         try {
             while (videoActive && cam.read(frame)) {
-                BytePointer mob = new BytePointer();
-                imencode(".jpg", frame, mob);
-                byte[] bytes = new byte[(int) mob.limit()];
-                mob.get(bytes);
+                MatOfByte mob = new MatOfByte();
+                Imgcodecs.imencode(".jpg", frame, mob);
+                byte[] bytes = mob.toArray();
 
                 // Enviar el frame al servidor
                 videoOut.writeInt(bytes.length);
