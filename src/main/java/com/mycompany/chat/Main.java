@@ -23,35 +23,26 @@ public class Main {
     public static void main(String[] args) {
         try {
             while (true) {
-                mostrarMenu();
+                mostrarMenuInicial();
                 String opcion = scanner.nextLine().trim();
 
                 switch (opcion) {
                     case "1":
-                        configurarBaseDatos();
+                        menuServidor();
                         break;
                     case "2":
-                        iniciarServidor();
-                        break;
-                    case "3":
                         iniciarCliente();
                         break;
-                    case "4":
-                        verificarConexionDB();
-                        break;
-                    case "5":
-                        System.out.println("\n¡Hasta luego!");
+                    case "3":
+                        System.out.println("\nSaliendo del programa...");
                         System.exit(0);
                         break;
-                    case "6":
-                        registrarUsuario();
-                        break;
                     default:
-                        System.out.println("\nOpcion invalida. Intenta de nuevo.\n");
+                        System.out.println("\nOpción invalida. Intentalo de nuevo.\n");
                 }
             }
         } catch (Exception e) {
-            System.err.println("\nError fatal en la aplicación: " + e.getMessage());
+            System.err.println("\nError fatal en la aplicacion: " + e.getMessage());
             e.printStackTrace();
             System.err.println("\nPresiona Enter para salir...");
             try {
@@ -61,19 +52,56 @@ public class Main {
         }
     }
 
-private static void mostrarMenu() {
-    System.out.println("======================================================");
-    System.out.println("                   MENÚ PRINCIPAL                     ");
-    System.out.println("======================================================");
-    System.out.println("[1] Configurar base de datos MySQL");
-    System.out.println("[2] Iniciar SERVIDOR");
-    System.out.println("[3] Iniciar CLIENTE");
-    System.out.println("[4] Verificar conexion a base de datos");
-    System.out.println("[5] Salir");
-    System.out.println("[6] Registrar nuevo usuario");
-    System.out.println("\n-----------------------------------------------------");
-    System.out.print("Selecciona una opción: ");
-}
+    private static void mostrarMenuInicial() {
+        System.out.println("======================================================");
+        System.out.println("              MENÚ PRINCIPAL - SELECCIÓN               ");
+        System.out.println("======================================================");
+        System.out.println("[1] Modo SERVIDOR");
+        System.out.println("[2] Modo CLIENTE");
+        System.out.println("[3] Salir");
+        System.out.println("\n-----------------------------------------------------");
+        System.out.print("Selecciona una opción: ");
+    }
+
+    private static void menuServidor() {
+        while (true) {
+            mostrarMenuServidor();
+            String opcion = scanner.nextLine().trim();
+
+            switch (opcion) {
+                case "1":
+                    configurarBaseDatos();
+                    break;
+                case "2":
+                    verificarConexionDB();
+                    break;
+                case "3":
+                    registrarUsuario();
+                    break;
+                case "4":
+                    iniciarServidor();
+                    return;
+                case "5":
+                    return; // Volver al menú principal
+                default:
+                    System.out.println("\nOpción inválida. Intenta de nuevo.\n");
+            }
+        }
+    }
+
+    private static void mostrarMenuServidor() {
+        System.out.println("\n======================================================");
+        System.out.println("              MENÚ SERVIDOR                           ");
+        System.out.println("======================================================");
+        System.out.println("[1] Configurar base de datos MySQL");
+        System.out.println("[2] Verificar conexión a base de datos");
+        System.out.println("[3] Registrar nuevo usuario");
+        System.out.println("[4] Iniciar servidor");
+        System.out.println("[5] Volver al menú principal");
+        System.out.println("\n-----------------------------------------------------");
+        System.out.print("Selecciona una opción: ");
+    }
+
 
 
     private static void configurarBaseDatos() {
