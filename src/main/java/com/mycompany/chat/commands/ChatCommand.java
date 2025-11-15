@@ -1,6 +1,7 @@
 package com.mycompany.chat.commands;
 
 import com.mycompany.chat.ChatClient;
+import com.mycompany.chat.util.Constants;
 import java.util.Scanner;
 
 /**
@@ -39,7 +40,14 @@ public class ChatCommand implements Command {
             }
             
             if (!message.isEmpty()) {
-                client.sendMessage("MSG|" + recipient + "|" + message);
+                // Validar tamaño del mensaje antes de enviar
+                if (message.length() > Constants.MAX_MESSAGE_LENGTH) {
+                    System.out.println("[!] Mensaje demasiado largo (max " + 
+                                     Constants.MAX_MESSAGE_LENGTH + " caracteres)");
+                    continue;
+                }
+                client.sendMessage(Constants.CMD_MSG + Constants.PROTOCOL_SEPARATOR + 
+                                 recipient + Constants.PROTOCOL_SEPARATOR + message);
             }
         }
         
