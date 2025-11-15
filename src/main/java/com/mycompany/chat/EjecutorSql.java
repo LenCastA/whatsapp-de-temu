@@ -41,14 +41,6 @@ public class EjecutorSql {
         return instance;
     }
     
-    /**
-     * @deprecated Usar getInstance() en su lugar. Mantenido por compatibilidad.
-     */
-    @Deprecated
-    public static EjecutorSql CreateEjecutorSql() {
-        return getInstance();
-    }
-    
     public void CreateDatabase(String usuario, String contraseña){
         String rutaArchivo = "src/main/resources/schema.sql";
         String url = "jdbc:mysql://localhost:3306/?allowMultiQueries=true";

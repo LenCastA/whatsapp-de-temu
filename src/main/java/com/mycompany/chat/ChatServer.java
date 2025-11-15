@@ -7,12 +7,12 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import com.mycompany.chat.util.Constants;
 
 public class ChatServer {
     private int port;
@@ -20,7 +20,6 @@ public class ChatServer {
     private ServerSocket videoServer;
     private ExecutorService threadPool;
     private Set<ClientHandler> clients;
-    private Map<String, Socket> videoSockets;
     private volatile boolean running;
 
     // Constructor por defecto (puerto 9000)
@@ -32,15 +31,14 @@ public class ChatServer {
     public ChatServer(int port) {
         this.port = port;
         this.clients = ConcurrentHashMap.newKeySet();
-        this.threadPool = Executors.newCachedThreadPool();
-        this.videoSockets = new ConcurrentHashMap<>();
+        this.threadPool = Executors.newFixedThreadPool(Constants.SERVER_THREAD_POOL_SIZE);
         this.running = true;
     }
     
     public void start() {
         try {
             serverSocket = new ServerSocket(port);
-            videoServer = new ServerSocket(port+1);
+            videoServer = new ServerSocket(port + Constants.DEFAULT_VIDEO_PORT_OFFSET);
             System.out.println("===========================================");
             System.out.println("    Servidor de Chat iniciado en puerto " + port);
             System.out.println("===========================================");
@@ -118,27 +116,6 @@ public class ChatServer {
         return null;
     }
     
-    // Envía video a todos los clientes (método antiguo, mantenido para compatibilidad)
-    public void broadcastVideo(byte[] frame, ClientHandler sender){
-        for (ClientHandler client : clients) {
-            if (client.getVideoSocket() != null && client.isAuthenticated()) {
-                try {
-                    DataOutputStream out = new DataOutputStream(client.getVideoSocket().getOutputStream());
-                    byte[] nameBytes = sender.getUsername().getBytes();
-                    out.writeInt(nameBytes.length);
-                    out.write(nameBytes);
-
-                    // Enviar longitud del frame y el frame mismo
-                    out.writeInt(frame.length);
-                    out.write(frame);
-                    out.flush();
-                } catch (IOException e) {
-                    System.err.println("Error enviando frame a " + client.getUsername() + ": " + e.getMessage());
-                }
-            }
-        }
-    }
-    
     // Envía video privado a un destinatario específico
     public boolean sendPrivateVideo(byte[] frame, String recipient, ClientHandler sender) {
         ClientHandler target = getClientByUsername(recipient);
@@ -161,15 +138,6 @@ public class ChatServer {
         }
         return false;
     }
-    // Envía un archivo a todos los clientes excepto al emisor (para compatibilidad)
-    public void broadcastFile(String fileName, byte[] fileData, ClientHandler sender) {
-        for (ClientHandler client : clients) {
-            if (client != sender && client.isAuthenticated()) {
-                client.sendFile(fileName, fileData);
-            }
-        }
-    }
-    
     // Envía un archivo privado a un destinatario específico
     public boolean sendPrivateFile(String fileName, byte[] fileData, String recipient, ClientHandler sender) {
         ClientHandler target = getClientByUsername(recipient);
@@ -183,7 +151,6 @@ public class ChatServer {
     // Agrega un cliente a la sala
     public void addClient(ClientHandler client) {
         clients.add(client);
-        videoSockets.put(client.getUsername(), client.getVideoSocket());
         System.out.println("Usuario autenticado: " + client.getUsername()
                 + " (Total conectados: " + clients.size() + ")");
     }
@@ -191,11 +158,11 @@ public class ChatServer {
     // Remueve un cliente de la sala
     public void removeClient(ClientHandler client) {
         clients.remove(client);
-        videoSockets.remove(client.getUsername(), client.getVideoSocket());
         if (client.getUsername() != null) {
             System.out.println("Usuario desconectado: " + client.getUsername()
                     + " (Total conectados: " + clients.size() + ")");
-            broadcast("SYSTEM|" + client.getUsername() + " se ha desconectado", client);
+            broadcast(Constants.RESP_SYSTEM + Constants.PROTOCOL_SEPARATOR + 
+                     client.getUsername() + " se ha desconectado", client);
         }
     }
 
@@ -233,7 +200,7 @@ public class ChatServer {
             if (threadPool != null) {
                 threadPool.shutdown();
                 try {
-                    if (!threadPool.awaitTermination(5, TimeUnit.SECONDS)) {
+                    if (!threadPool.awaitTermination(Constants.THREAD_SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                         threadPool.shutdownNow();
                         if (!threadPool.awaitTermination(2, TimeUnit.SECONDS)) {
                             System.err.println("Algunos threads no terminaron correctamente");
