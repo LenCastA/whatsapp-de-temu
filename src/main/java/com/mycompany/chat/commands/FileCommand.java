@@ -21,13 +21,13 @@ public class FileCommand implements Command {
     public boolean execute() {
         String recipient = client.getCurrentRecipient();
         if (recipient == null || recipient.isEmpty()) {
-            System.out.println("⚠️  Error: No hay destinatario seleccionado.");
+            System.out.println("[!] Error: No hay destinatario seleccionado.");
             return false;
         }
         
-        System.out.println("\n───────────────────────────────────────────────────");
+        System.out.println("\n----------------------------------------------------");
         System.out.println("              ENVIAR ARCHIVO");
-        System.out.println("───────────────────────────────────────────────────");
+        System.out.println("----------------------------------------------------");
         System.out.println("Destinatario: " + recipient);
         System.out.print("Ruta del archivo (o 'volver' para regresar): ");
         
@@ -41,7 +41,7 @@ public class FileCommand implements Command {
             client.sendFile(filePath);
             return true;
         } else {
-            System.out.println("⚠️  Ruta de archivo no válida.\n");
+            System.out.println("[!] Ruta de archivo no valida.\n");
             return false;
         }
     }

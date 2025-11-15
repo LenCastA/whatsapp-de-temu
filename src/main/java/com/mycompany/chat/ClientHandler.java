@@ -312,19 +312,50 @@ private void handleVideoCommand(String[] parts) {
 
     public void close() {
         running = false;
+        videoActive = false; // Detener video si está activo
         server.removeClient(this);
 
         try {
-            if (in != null)
-                in.close();
-            if (out != null)
+            // Cerrar recursos de video primero
+            if (videoIn != null) {
+                try {
+                    videoIn.close();
+                } catch (IOException e) {
+                    // Ignorar errores al cerrar videoIn
+                }
+            }
+            if (videoClient != null && !videoClient.isClosed()) {
+                try {
+                    videoClient.close();
+                } catch (IOException e) {
+                    // Ignorar errores al cerrar videoClient
+                }
+            }
+            
+            // Cerrar recursos principales
+            if (dataOut != null) {
+                try {
+                    dataOut.close();
+                } catch (IOException e) {
+                    // Ignorar errores al cerrar dataOut
+                }
+            }
+            if (dataIn != null) {
+                try {
+                    dataIn.close();
+                } catch (IOException e) {
+                    // Ignorar errores al cerrar dataIn
+                }
+            }
+            if (out != null) {
                 out.close();
-            if (dataIn != null)
-                dataIn.close();
-            if (dataOut != null)
-                dataOut.close();
-            if (socket != null && !socket.isClosed())
+            }
+            if (in != null) {
+                in.close();
+            }
+            if (socket != null && !socket.isClosed()) {
                 socket.close();
+            }
         } catch (IOException e) {
             System.err.println("Error cerrando conexión: " + e.getMessage());
         }

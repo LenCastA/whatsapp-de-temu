@@ -4,6 +4,7 @@
  */
 package com.mycompany.chat;
 
+import com.mycompany.chat.util.TestDataInitializer;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.sql.Connection;
@@ -12,19 +13,40 @@ import java.sql.SQLException;
 import java.sql.Statement;
 
 /**
- *
+ * Ejecutor de scripts SQL para inicializar la base de datos.
+ * Implementa patrón Singleton thread-safe usando double-checked locking.
+ * 
  * @author nunez
  */
 public class EjecutorSql {
-    private static EjecutorSql c;
-    private EjecutorSql(){
-        System.out.println("Instancia creada");
+    private static volatile EjecutorSql instance;
+    
+    private EjecutorSql() {
+        // Constructor privado para prevenir instanciación directa
     }
-    public static EjecutorSql CreateEjecutorSql(){
-        if (c == null){
-            c = new EjecutorSql();
+    
+    /**
+     * Obtiene la instancia única del EjecutorSql (Singleton thread-safe).
+     * 
+     * @return instancia única de EjecutorSql
+     */
+    public static EjecutorSql getInstance() {
+        if (instance == null) {
+            synchronized (EjecutorSql.class) {
+                if (instance == null) {
+                    instance = new EjecutorSql();
+                }
+            }
         }
-        return c;
+        return instance;
+    }
+    
+    /**
+     * @deprecated Usar getInstance() en su lugar. Mantenido por compatibilidad.
+     */
+    @Deprecated
+    public static EjecutorSql CreateEjecutorSql() {
+        return getInstance();
     }
     
     public void CreateDatabase(String usuario, String contraseña){
@@ -42,15 +64,20 @@ public class EjecutorSql {
                     try (Statement st = conn.createStatement()) {
                         st.execute(sentencia);
                     } catch (SQLException e) {
-                        System.err.println("⚠️ Error en: " + sentencia);
+                        System.err.println("[!] Error en: " + sentencia);
                         System.err.println(e.getMessage());
                     }
                 }
             }
 
-            System.out.println("\n🎉 Script ejecutado con éxito.");
+            System.out.println("\n[EXITO] Script ejecutado con exito.");
             Database.setUser(usuario);
             Database.setPassword(contraseña);
+            
+            // Crear usuarios de prueba automáticamente después de crear la base de datos
+            System.out.println("\nCreando usuarios de prueba...");
+            TestDataInitializer.initializeTestUsers();
+            
         } catch (Exception e) {
             e.printStackTrace();
         }

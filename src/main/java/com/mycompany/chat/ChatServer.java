@@ -203,22 +203,50 @@ public class ChatServer {
     public void shutdown() {
         running = false;
         try {
-            if (serverSocket != null && !serverSocket.isClosed()) {
-                serverSocket.close();
-            }
-
-            // Cerrar todas las conexiones de clientes
+            // Cerrar todas las conexiones de clientes primero
             for (ClientHandler client : clients) {
-                client.close();
+                try {
+                    client.close();
+                } catch (Exception e) {
+                    System.err.println("Error cerrando cliente: " + e.getMessage());
+                }
             }
 
-            threadPool.shutdown();
-            if (!threadPool.awaitTermination(5, TimeUnit.SECONDS)) {
-                threadPool.shutdownNow();
+            // Cerrar sockets del servidor
+            if (videoServer != null && !videoServer.isClosed()) {
+                try {
+                    videoServer.close();
+                } catch (IOException e) {
+                    System.err.println("Error cerrando videoServer: " + e.getMessage());
+                }
+            }
+            
+            if (serverSocket != null && !serverSocket.isClosed()) {
+                try {
+                    serverSocket.close();
+                } catch (IOException e) {
+                    System.err.println("Error cerrando serverSocket: " + e.getMessage());
+                }
+            }
+
+            // Cerrar pool de threads
+            if (threadPool != null) {
+                threadPool.shutdown();
+                try {
+                    if (!threadPool.awaitTermination(5, TimeUnit.SECONDS)) {
+                        threadPool.shutdownNow();
+                        if (!threadPool.awaitTermination(2, TimeUnit.SECONDS)) {
+                            System.err.println("Algunos threads no terminaron correctamente");
+                        }
+                    }
+                } catch (InterruptedException e) {
+                    threadPool.shutdownNow();
+                    Thread.currentThread().interrupt();
+                }
             }
 
             System.out.println("\nServidor detenido correctamente.");
-        } catch (IOException | InterruptedException e) {
+        } catch (Exception e) {
             System.err.println("Error al detener el servidor: " + e.getMessage());
         }
     }

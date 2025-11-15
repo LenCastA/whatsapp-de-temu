@@ -1,52 +1,19 @@
-# ==========================
-# Archivos y carpetas de compilación
-# ==========================
+# Archivos de configuración con credenciales
+config.properties
+
+# Archivos compilados
 target/
 *.class
 *.jar
-*.war
-*.ear
-*.log
-*.tmp
-!lib/opencv-4120.jar
-# ==========================
-# Configuración del IDE
-# ==========================
-# NetBeans
-nbproject/private/
-build/
-nbbuild/
-dist/
-nbdist/
-nbactions.xml
-nb-configuration.xml
 
-# IntelliJ IDEA
+# IDE
 .idea/
 *.iml
-*.iws
-
-# VSCode
 .vscode/
+.settings/
+.classpath
+.project
 
-# ==========================
-# Archivos del sistema
-# ==========================
+# Sistema operativo
 .DS_Store
 Thumbs.db
-
-# ==========================
-# Archivos generados o temporales
-# ==========================
-downloads/
-*.txt
-*.png
-*.mp4
-*.pdf
-
-# ==========================
-# Archivos de entorno local
-# ==========================
-.env
-.env.local
-*.properties.local
