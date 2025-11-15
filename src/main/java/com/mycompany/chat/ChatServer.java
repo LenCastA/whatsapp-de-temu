@@ -13,6 +13,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import com.mycompany.chat.util.Constants;
+import com.mycompany.chat.observer.ServerEventSubject;
+import com.mycompany.chat.observer.ServerEventData;
+import com.mycompany.chat.observer.ServerEvent;
+import com.mycompany.chat.observer.ServerEventLogger;
 
 public class ChatServer {
     private int port;
@@ -21,6 +25,7 @@ public class ChatServer {
     private ExecutorService threadPool;
     private Set<ClientHandler> clients;
     private volatile boolean running;
+    private final ServerEventSubject eventSubject; // Observer Pattern: Subject para notificar eventos
 
     // Constructor por defecto (puerto 9000)
     public ChatServer() {
@@ -33,6 +38,9 @@ public class ChatServer {
         this.clients = ConcurrentHashMap.newKeySet();
         this.threadPool = Executors.newFixedThreadPool(Constants.SERVER_THREAD_POOL_SIZE);
         this.running = true;
+        // Inicializar Observer Pattern: Subject y logger por defecto
+        this.eventSubject = new ServerEventSubject();
+        this.eventSubject.addObserver(new ServerEventLogger(false)); // Logger silencioso por defecto
     }
     
     public void start() {
@@ -89,6 +97,11 @@ public class ChatServer {
         for (ClientHandler client : clients) {
             if (client.isAuthenticated() && client.getUsername().equals(recipient)) {
                 client.sendMessage(message);
+                // Observer Pattern: Notificar evento de mensaje enviado
+                if (sender.getUsername() != null) {
+                    eventSubject.notifyObservers(new ServerEventData(
+                        ServerEvent.PRIVATE_MESSAGE_SENT, sender.getUsername(), recipient, message, null));
+                }
                 return true; // Destinatario encontrado
             }
         }
@@ -138,14 +151,30 @@ public class ChatServer {
         }
         return false;
     }
+    
     // Envía un archivo privado a un destinatario específico
     public boolean sendPrivateFile(String fileName, byte[] fileData, String recipient, ClientHandler sender) {
         ClientHandler target = getClientByUsername(recipient);
         if (target != null && target.isAuthenticated()) {
             target.sendFile(fileName, fileData);
+            // Observer Pattern: Notificar evento de archivo enviado
+            if (sender.getUsername() != null) {
+                eventSubject.notifyObservers(new ServerEventData(
+                    ServerEvent.FILE_SENT, sender.getUsername(), recipient, fileName, fileData));
+            }
             return true;
         }
         return false;
+    }
+    
+    /**
+     * Obtiene el Subject de eventos para permitir registrar observadores externos.
+     * Observer Pattern: Método para acceder al Subject.
+     * 
+     * @return ServerEventSubject para registrar observadores
+     */
+    public ServerEventSubject getEventSubject() {
+        return eventSubject;
     }
 
     // Agrega un cliente a la sala
@@ -153,6 +182,11 @@ public class ChatServer {
         clients.add(client);
         System.out.println("Usuario autenticado: " + client.getUsername()
                 + " (Total conectados: " + clients.size() + ")");
+        // Observer Pattern: Notificar evento de conexión
+        if (client.getUsername() != null) {
+            eventSubject.notifyObservers(new ServerEventData(
+                ServerEvent.USER_CONNECTED, client.getUsername()));
+        }
     }
 
     // Remueve un cliente de la sala
@@ -163,6 +197,9 @@ public class ChatServer {
                     + " (Total conectados: " + clients.size() + ")");
             broadcast(Constants.RESP_SYSTEM + Constants.PROTOCOL_SEPARATOR + 
                      client.getUsername() + " se ha desconectado", client);
+            // Observer Pattern: Notificar evento de desconexión
+            eventSubject.notifyObservers(new ServerEventData(
+                ServerEvent.USER_DISCONNECTED, client.getUsername()));
         }
     }
 

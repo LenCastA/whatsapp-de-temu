@@ -4,11 +4,12 @@ import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.util.List;
 import com.mycompany.chat.util.Constants;
+import com.mycompany.chat.observer.ServerEvent;
+import com.mycompany.chat.observer.ServerEventData;
 
 public class ClientHandler implements Runnable {
     private Socket socket;
@@ -308,6 +309,11 @@ private void handleVideoCommand(String[] parts) {
                 videoRecipient = recipient;
                 sendMessage(Constants.RESP_SERVER + Constants.PROTOCOL_SEPARATOR + 
                            "Videollamada iniciada con " + recipient);
+                // Observer Pattern: Notificar evento de videollamada iniciada
+                if (username != null && server.getEventSubject() != null) {
+                    server.getEventSubject().notifyObservers(new ServerEventData(
+                        ServerEvent.VIDEO_CALL_STARTED, username, recipient));
+                }
                 new Thread(this::receiveVideo).start();
             } catch (IOException e) {
                 sendMessage(Constants.RESP_ERROR + Constants.PROTOCOL_SEPARATOR + 
@@ -318,10 +324,16 @@ private void handleVideoCommand(String[] parts) {
                        "Ya hay una videollamada activa. Detén la actual primero.");
         }
     } else if (parts.length >= 2 && "STOP".equals(parts[1])) {
+        String previousRecipient = videoRecipient;
         videoActive = false;
         videoRecipient = null;
         sendMessage(Constants.RESP_SERVER + Constants.PROTOCOL_SEPARATOR + 
                    "Videollamada detenida.");
+        // Observer Pattern: Notificar evento de videollamada detenida
+        if (username != null && previousRecipient != null && server.getEventSubject() != null) {
+            server.getEventSubject().notifyObservers(new ServerEventData(
+                ServerEvent.VIDEO_CALL_STOPPED, username, previousRecipient));
+        }
         try {
             if (videoIn != null) videoIn.close();
         } catch (IOException ignored) {}

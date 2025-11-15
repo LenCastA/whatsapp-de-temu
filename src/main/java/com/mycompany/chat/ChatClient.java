@@ -38,6 +38,7 @@ import org.opencv.videoio.VideoCapture;
 import com.mycompany.chat.commands.ChangeRecipientCommand;
 import com.mycompany.chat.commands.ChatCommand;
 import com.mycompany.chat.commands.Command;
+import com.mycompany.chat.commands.CommandFactory;
 import com.mycompany.chat.commands.ExitCommand;
 import com.mycompany.chat.commands.FileCommand;
 import com.mycompany.chat.commands.MenuCommandInvoker;
@@ -310,13 +311,15 @@ public class ChatClient {
     
     // Muestra el menú principal con opciones usando el patrón Command
     private void showMainMenu() {
-        // Inicializar el invocador de comandos y registrar todos los comandos
+        // Inicializar el invocador de comandos y el factory de comandos
         MenuCommandInvoker invoker = new MenuCommandInvoker();
-        invoker.registerCommand("1", new ChatCommand(this, scanner));
-        invoker.registerCommand("2", new FileCommand(this, scanner));
-        invoker.registerCommand("3", new VideoCommand(this, scanner));
-        invoker.registerCommand("4", new ChangeRecipientCommand(this));
-        invoker.registerCommand("5", new ExitCommand(this));
+        // Usar Factory Method Pattern para crear los comandos
+        CommandFactory commandFactory = new CommandFactory(this, scanner);
+        invoker.registerCommand("1", commandFactory.createChatCommand());
+        invoker.registerCommand("2", commandFactory.createFileCommand());
+        invoker.registerCommand("3", commandFactory.createVideoCommand());
+        invoker.registerCommand("4", commandFactory.createChangeRecipientCommand());
+        invoker.registerCommand("5", commandFactory.createExitCommand());
         
         while (running && currentRecipient != null && !currentRecipient.isEmpty()) {
             System.out.println("\n====================================================");
