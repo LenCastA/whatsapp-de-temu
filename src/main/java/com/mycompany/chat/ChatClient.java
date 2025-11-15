@@ -80,7 +80,7 @@ public class ChatClient {
         this(host, port, new DefaultSocketFactory());
     }
     
-    // Constructor con factory personalizado (útil para testing)
+    // Constructor con factory personalizado
     public ChatClient(String host, int port, SocketFactory socketFactory) {
         this.videoActive = false;
         this.host = host;
