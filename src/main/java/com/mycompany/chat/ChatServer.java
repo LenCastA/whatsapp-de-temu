@@ -13,6 +13,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import com.mycompany.chat.util.Constants;
+import com.mycompany.chat.factory.DefaultSocketFactory;
+import com.mycompany.chat.factory.SocketFactory;
 
 public class ChatServer {
     private int port;
@@ -21,6 +23,7 @@ public class ChatServer {
     private ExecutorService threadPool;
     private Set<ClientHandler> clients;
     private volatile boolean running;
+    private final SocketFactory socketFactory; // Factory para crear sockets
 
     // Constructor por defecto (puerto 9000)
     public ChatServer() {
@@ -29,16 +32,23 @@ public class ChatServer {
 
     // Constructor con puerto configurable
     public ChatServer(int port) {
+        this(port, new DefaultSocketFactory());
+    }
+    
+    // Constructor con factory personalizado (útil para testing)
+    public ChatServer(int port, SocketFactory socketFactory) {
         this.port = port;
         this.clients = ConcurrentHashMap.newKeySet();
         this.threadPool = Executors.newFixedThreadPool(Constants.SERVER_THREAD_POOL_SIZE);
         this.running = true;
+        this.socketFactory = socketFactory;
     }
     
     public void start() {
         try {
-            serverSocket = new ServerSocket(port);
-            videoServer = new ServerSocket(port + Constants.DEFAULT_VIDEO_PORT_OFFSET);
+            // Usar el factory para crear los ServerSockets
+            serverSocket = socketFactory.createServerSocket(port);
+            videoServer = socketFactory.createVideoServerSocket(port, Constants.DEFAULT_VIDEO_PORT_OFFSET);
             System.out.println("===========================================");
             System.out.println("    Servidor de Chat iniciado en puerto " + port);
             System.out.println("===========================================");

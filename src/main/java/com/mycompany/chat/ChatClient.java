@@ -20,7 +20,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import com.mycompany.chat.util.Constants;
 
 import javax.imageio.ImageIO;
 import javax.swing.ImageIcon;
@@ -42,6 +41,9 @@ import com.mycompany.chat.commands.ExitCommand;
 import com.mycompany.chat.commands.FileCommand;
 import com.mycompany.chat.commands.MenuCommandInvoker;
 import com.mycompany.chat.commands.VideoCommand;
+import com.mycompany.chat.factory.DefaultSocketFactory;
+import com.mycompany.chat.factory.SocketFactory;
+import com.mycompany.chat.util.Constants;
 
 public class ChatClient {
     private String host;
@@ -65,6 +67,7 @@ public class ChatClient {
     private JPanel videoPanel; // Panel de video (se crea solo cuando se inicia video)
     private ExecutorService executorService; // Pool de threads para gestionar hilos
     private final Object dataOutLock = new Object(); // Sincronización para escritura de mensajes y archivos
+    private final SocketFactory socketFactory; // Factory para crear sockets
 
     // Constructor por defecto => localhost:9000
     public ChatClient() {
@@ -74,12 +77,18 @@ public class ChatClient {
 
     // Constructor configurable (lo usa Main)
     public ChatClient(String host, int port) {
+        this(host, port, new DefaultSocketFactory());
+    }
+    
+    // Constructor con factory personalizado (útil para testing)
+    public ChatClient(String host, int port, SocketFactory socketFactory) {
         this.videoActive = false;
         this.host = host;
         this.port = port;
         this.scanner = new Scanner(System.in);
         this.running = true;
         this.executorService = Executors.newFixedThreadPool(Constants.CLIENT_THREAD_POOL_SIZE);
+        this.socketFactory = socketFactory;
     }
 
     /**
@@ -92,8 +101,9 @@ public class ChatClient {
             System.out.println("===========================================");
             System.out.println("Conectando al servidor " + host + ":" + port + "...\n");
 
-            socket = new Socket(host, port);
-            videoSocket = new Socket(host, port + Constants.DEFAULT_VIDEO_PORT_OFFSET);
+            // Usar el factory para crear los sockets
+            socket = socketFactory.createClientSocket(host, port);
+            videoSocket = socketFactory.createVideoClientSocket(host, port, Constants.DEFAULT_VIDEO_PORT_OFFSET);
             videoOut = new DataOutputStream(videoSocket.getOutputStream());
             dataIn = new DataInputStream(socket.getInputStream());
             dataOut = new DataOutputStream(socket.getOutputStream());
