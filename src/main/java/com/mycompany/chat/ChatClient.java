@@ -95,8 +95,6 @@ public class ChatClient {
             socket = new Socket(host, port);
             videoSocket = new Socket(host, port + Constants.DEFAULT_VIDEO_PORT_OFFSET);
             videoOut = new DataOutputStream(videoSocket.getOutputStream());
-            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            out = new PrintWriter(socket.getOutputStream(), true);
             dataIn = new DataInputStream(socket.getInputStream());
             dataOut = new DataOutputStream(socket.getOutputStream());
 
@@ -162,15 +160,16 @@ public class ChatClient {
     // Recibe mensajes del servidor (hilo separado)
     private void receiveMessages() {
         try {
-            String message;
-            while (running && (message = in.readLine()) != null) {
+            while (running ) {
+                String message = dataIn.readUTF();
                 processIncomingMessage(message);
             }
         } catch (IOException e) {
             if (running) {
-                System.err.println("\nConexion perdida con el servidor");
-                running = false;
+                System.err.println("\nConexion cerrada por el servidor");                
             }
+        } finally {
+            running = false;
         }
     }
 
@@ -457,8 +456,13 @@ public class ChatClient {
 
     // Envía un mensaje al servidor
     public void sendMessage(String message) {
-        if (out != null && !socket.isClosed()) {
-            out.println(message);
+        try{
+            if (dataOut != null && !socket.isClosed()) {
+                dataOut.writeUTF(message);
+                dataOut.flush();
+            }
+        } catch (IOException e){
+            System.err.println("Error enviando mensaje: "+e.getMessage());
         }
     }
 

@@ -42,16 +42,14 @@ public class ClientHandler implements Runnable {
     public void run() {
         try {
             // Inicializar streams
-            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            out = new PrintWriter(socket.getOutputStream(), true);
             dataIn = new DataInputStream(socket.getInputStream());
             dataOut = new DataOutputStream(socket.getOutputStream());
 
             sendMessage(Constants.RESP_SERVER + Constants.PROTOCOL_SEPARATOR + 
                        "Bienvenido al servidor de chat. Por favor inicia sesión.");
 
-            String line;
-            while (running && (line = in.readLine()) != null) {
+            while (running) {
+                String line =dataIn.readUTF();
                 processMessage(line);
             }
 
@@ -333,8 +331,13 @@ private void handleVideoCommand(String[] parts) {
     }
 }
     public void sendMessage(String message) {
-        if (out != null && !socket.isClosed()) {
-            out.println(message);
+        try {
+            if (dataOut != null && !socket.isClosed()) {
+                dataOut.writeUTF(message);
+                dataOut.flush();
+            }
+        } catch (IOException e) {
+            System.err.println("Error enviando mensaje a " + username + ": " + e.getMessage());
         }
     }
 
