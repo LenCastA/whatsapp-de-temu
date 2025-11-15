@@ -7,10 +7,8 @@ CREATE TABLE IF NOT EXISTS users (
     password VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
--- Insertar usuarios de prueba
-INSERT INTO users (username, password)
-VALUES ('Franz', 'franz123'),
-    ('Alexis', 'alexis123'),
-    ('Roy', 'charlie123'),
-    ('Lenin', 'lenin123'),
-    ('Admin', 'admin123');
+-- Username: Franz, Password: franz123
+-- Username: Alexis, Password: alexis123  
+-- Username: Roy, Password: charlie123
+-- Username: Lenin, Password: lenin123
+-- Username: Admin, Password: admin123

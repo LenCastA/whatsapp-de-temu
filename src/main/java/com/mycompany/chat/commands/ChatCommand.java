@@ -1,6 +1,7 @@
 package com.mycompany.chat.commands;
 
 import com.mycompany.chat.ChatClient;
+import com.mycompany.chat.util.Constants;
 import java.util.Scanner;
 
 /**
@@ -20,15 +21,15 @@ public class ChatCommand implements Command {
     public boolean execute() {
         String recipient = client.getCurrentRecipient();
         if (recipient == null || recipient.isEmpty()) {
-            System.out.println("⚠️  Error: No hay destinatario seleccionado.");
+            System.out.println("[!] Error: No hay destinatario seleccionado.");
             return false;
         }
         
-        System.out.println("\n───────────────────────────────────────────────────");
+        System.out.println("\n----------------------------------------------------");
         System.out.println("           ENVIAR MENSAJE DE CHAT");
-        System.out.println("───────────────────────────────────────────────────");
+        System.out.println("----------------------------------------------------");
         System.out.println("Destinatario: " + recipient);
-        System.out.println("(Escribe 'volver' para regresar al menú)\n");
+        System.out.println("(Escribe 'volver' para regresar al menu)\n");
         
         while (client.isRunning() && recipient != null) {
             System.out.print("Mensaje: ");
@@ -39,7 +40,14 @@ public class ChatCommand implements Command {
             }
             
             if (!message.isEmpty()) {
-                client.sendMessage("MSG|" + recipient + "|" + message);
+                // Validar tamaño del mensaje antes de enviar
+                if (message.length() > Constants.MAX_MESSAGE_LENGTH) {
+                    System.out.println("[!] Mensaje demasiado largo (max " + 
+                                     Constants.MAX_MESSAGE_LENGTH + " caracteres)");
+                    continue;
+                }
+                client.sendMessage(Constants.CMD_MSG + Constants.PROTOCOL_SEPARATOR + 
+                                 recipient + Constants.PROTOCOL_SEPARATOR + message);
             }
         }
         

@@ -4,7 +4,6 @@ import java.awt.GridLayout;
 import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
@@ -18,6 +17,11 @@ import java.nio.file.Paths;
 import java.util.Map;
 import java.util.Scanner;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import com.mycompany.chat.util.Constants;
 
 import javax.imageio.ImageIO;
 import javax.swing.ImageIcon;
@@ -27,8 +31,6 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.SwingUtilities;
 
-import org.bytedeco.javacv.Java2DFrameConverter;
-import org.bytedeco.javacv.OpenCVFrameGrabber;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfByte;
 import org.opencv.imgcodecs.Imgcodecs;
@@ -56,13 +58,13 @@ public class ChatClient {
     private Scanner scanner;
     private volatile boolean running;
     private boolean videoActive;
-    private JLabel videoLabel;
     private String currentRecipient; // Destinatario actual para mensajes
-    private volatile boolean loginSuccessful = false; // Flag para sincronizar login
+    private CountDownLatch loginLatch; // Sincronización de login
     
     private final Map<String, JLabel> videoViews = new ConcurrentHashMap<>();
-    private final JFrame videoFrame = new JFrame("Videollamada");
-    private final JPanel videoPanel = new JPanel(new GridLayout(0, 2, 5, 5));
+    private JFrame videoFrame; // Ventana de video (se crea solo cuando se inicia video)
+    private JPanel videoPanel; // Panel de video (se crea solo cuando se inicia video)
+    private ExecutorService executorService; // Pool de threads para gestionar hilos
 
     // Constructor por defecto => localhost:9000
     public ChatClient() {
@@ -77,6 +79,7 @@ public class ChatClient {
         this.port = port;
         this.scanner = new Scanner(System.in);
         this.running = true;
+        this.executorService = Executors.newFixedThreadPool(Constants.CLIENT_THREAD_POOL_SIZE);
     }
 
     /**
@@ -90,27 +93,27 @@ public class ChatClient {
             System.out.println("Conectando al servidor " + host + ":" + port + "...\n");
 
             socket = new Socket(host, port);
-            videoSocket = new Socket(host, port+1);
+            videoSocket = new Socket(host, port + Constants.DEFAULT_VIDEO_PORT_OFFSET);
             videoOut = new DataOutputStream(videoSocket.getOutputStream());
             dataIn = new DataInputStream(socket.getInputStream());
             dataOut = new DataOutputStream(socket.getOutputStream());
-            
-            JFrame frame = new JFrame("Cliente de Video");
-            videoLabel = new JLabel("Esperando video...");
-            frame.add(new JScrollPane(videoPanel));
-            frame.setSize(640, 480);
-            frame.setVisible(true);
-            frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
             System.out.println("Conectado al servidor!\n");
 
-            // Hilo para recibir mensajes
-            Thread receiveThread = new Thread(this::receiveMessages);
-            receiveThread.setDaemon(true);
-            receiveThread.start();
+            // Inicializar latch para sincronización de login
+            loginLatch = new CountDownLatch(1);
 
-            // Esperar por el mensaje de bienvenida
-            Thread.sleep(500);
+            // Hilo para recibir mensajes del servidor (gestionado por ExecutorService)
+            executorService.submit(this::receiveMessages);
+
+            // Pequeña pausa para asegurar que el hilo de recepción esté listo
+            // (no es para sincronización, solo para inicialización)
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
 
             // Pedir credenciales
             System.out.println("-------------------------------------");
@@ -123,17 +126,21 @@ public class ChatClient {
             String password = scanner.nextLine().trim();
 
             // Enviar login al servidor según nuevo formato
-            sendMessage("LOGIN|" + username + "|" + password);
+            sendMessage(Constants.CMD_LOGIN + Constants.PROTOCOL_SEPARATOR + username + 
+                       Constants.PROTOCOL_SEPARATOR + password);
 
-            // Esperar respuesta del login (máximo 5 segundos)
-            int attempts = 0;
-            while (!loginSuccessful && attempts < 50) {
-                Thread.sleep(100);
-                attempts++;
+            // Esperar respuesta del login con timeout
+            boolean loginReceived = false;
+            try {
+                loginReceived = loginLatch.await(Constants.LOGIN_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                System.err.println("Error: Login interrumpido");
+                return;
             }
             
-            if (!loginSuccessful) {
-                System.err.println("Error: No se recibió confirmación de login. Cerrando...");
+            if (!loginReceived) {
+                System.err.println("Error: Timeout esperando confirmación de login. Cerrando...");
                 return;
             }
             
@@ -143,10 +150,8 @@ public class ChatClient {
             selectRecipientAndShowMenu();
 
         } catch (IOException e) {
-            System.err.println("Error de conexión: " + e.getMessage());
-            System.err.println("Asegúrate de que el servidor esté corriendo.");
-        } catch (InterruptedException e) {
-            System.err.println("Error: " + e.getMessage());
+            System.err.println("Error de conexion: " + e.getMessage());
+            System.err.println("Asegurate de que el servidor este corriendo.");
         } finally {
             disconnect();
         }
@@ -179,30 +184,43 @@ public class ChatClient {
                 break;
 
             case "OK":
-                if (parts.length >= 2 && "LOGIN".equals(parts[1])) {
+                if (parts.length >= 2 && Constants.CMD_LOGIN.equals(parts[1])) {
                     System.out.println("\n" + (parts.length > 2 ? parts[2] : "Login exitoso"));
-                    System.out.println("\n═══════════════════════════════════════════════════");
-                    System.out.println("  ¡Bienvenido! Ahora debes seleccionar un destinatario");
-                    System.out.println("═══════════════════════════════════════════════════\n");
-                    loginSuccessful = true; // Marcar login como exitoso
-                } else if (parts.length >= 2 && "MSG".equals(parts[1])) {
+                    System.out.println("\n====================================================");
+                    System.out.println("  !Bienvenido! Ahora debes seleccionar un destinatario");
+                    System.out.println("====================================================\n");
+                    // Liberar el latch para indicar que el login fue exitoso
+                    if (loginLatch != null) {
+                        loginLatch.countDown();
+                    }
+                } else if (parts.length >= 2 && Constants.CMD_MSG.equals(parts[1])) {
                     // Confirmación de mensaje enviado
                     if (parts.length > 2) {
-                        System.out.println("✓ " + parts[2]);
+                        System.out.println("[OK] " + parts[2]);
                     }
                 } else if (parts.length > 1) {
-                    System.out.println("✓ " + parts[1]);
+                    System.out.println("[OK] " + parts[1]);
                 }
                 break;
 
             case "ERROR":
-                System.out.println("Error: " + (parts.length > 1 ? parts[1] : "Error desconocido"));
+                String errorMsg = parts.length > 1 ? parts[1] : "Error desconocido";
+                System.out.println("Error: " + errorMsg);
+                // Si hay un error durante el login, liberar el latch para evitar bloqueo
+                if (loginLatch != null && loginLatch.getCount() > 0) {
+                    loginLatch.countDown();
+                }
                 break;
 
             case "MSG":
                 if (parts.length >= 3) {
                     String sender = parts[1];
                     String msg = parts[2];
+                    // Validar tamaño del mensaje
+                    if (msg.length() > Constants.MAX_MESSAGE_LENGTH) {
+                        System.err.println("Advertencia: Mensaje recibido excede el tamaño máximo");
+                        break;
+                    }
                     // Mostrar mensaje privado recibido
                     System.out.println("[" + sender + "]: " + msg);
                 }
@@ -235,7 +253,7 @@ public class ChatClient {
                 int read = 0;
                 while (read < fileSize) {
                     int r = dataIn.read(fileData, read, fileSize - read);
-                    if (r == -1) throw new EOFException("Conexión cerrada durante la recepción del archivo");
+                    if (r == -1) throw new EOFException("Conexion cerrada durante la recepcion del archivo");
                     read += r;
                 }
 
@@ -258,38 +276,34 @@ public class ChatClient {
     // Selecciona destinatario y muestra el menú principal
     private void selectRecipientAndShowMenu() {
         while (running && (currentRecipient == null || currentRecipient.isEmpty())) {
-            System.out.println("═══════════════════════════════════════════════════");
+            System.out.println("====================================================");
             System.out.println("           SELECCIONAR DESTINATARIO");
-            System.out.println("═══════════════════════════════════════════════════\n");
+            System.out.println("====================================================\n");
             
             // Solicitar lista de usuarios
-            sendMessage("USERS");
+            sendMessage(Constants.CMD_USERS);
             
-            // Esperar un momento para recibir la lista
-            try {
-                Thread.sleep(500);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+            // No necesitamos esperar aquí - el mensaje se mostrará cuando llegue
+            // El usuario puede ingresar el destinatario inmediatamente
             
             System.out.print("\nIngresa el nombre del destinatario (o 'salir' para cerrar): ");
             String input = scanner.nextLine().trim();
             
             if (input.equalsIgnoreCase("salir") || input.equalsIgnoreCase("exit")) {
-                sendMessage("LOGOUT");
+                sendMessage(Constants.CMD_LOGOUT);
                 running = false;
                 return;
             }
             
             if (!input.isEmpty()) {
                 currentRecipient = input;
-                System.out.println("\n✓ Destinatario seleccionado: " + currentRecipient);
-                System.out.println("═══════════════════════════════════════════════════\n");
+                System.out.println("\n[OK] Destinatario seleccionado: " + currentRecipient);
+                System.out.println("====================================================\n");
                 
                 // Mostrar menú principal
                 showMainMenu();
             } else {
-                System.out.println("⚠️  Por favor ingresa un nombre de usuario válido.\n");
+                System.out.println("[!] Por favor ingresa un nombre de usuario valido.\n");
             }
         }
     }
@@ -305,19 +319,19 @@ public class ChatClient {
         invoker.registerCommand("5", new ExitCommand(this));
         
         while (running && currentRecipient != null && !currentRecipient.isEmpty()) {
-            System.out.println("\n═══════════════════════════════════════════════════");
-            System.out.println("              MENÚ PRINCIPAL");
-            System.out.println("═══════════════════════════════════════════════════");
+            System.out.println("\n====================================================");
+            System.out.println("              MENU PRINCIPAL");
+            System.out.println("====================================================");
             System.out.println("Destinatario actual: " + currentRecipient);
-            System.out.println("───────────────────────────────────────────────────");
+            System.out.println("----------------------------------------------------");
             
             // Mostrar opciones dinámicamente desde los comandos registrados
             for (Map.Entry<String, Command> entry : invoker.getCommands().entrySet()) {
                 System.out.println("[" + entry.getKey() + "] " + entry.getValue().getDescription());
             }
             
-            System.out.println("═══════════════════════════════════════════════════");
-            System.out.print("Selecciona una opción: ");
+            System.out.println("====================================================");
+            System.out.print("Selecciona una opcion: ");
             
             String option = scanner.nextLine().trim();
             
@@ -325,7 +339,7 @@ public class ChatClient {
             boolean executed = invoker.executeCommand(option);
             
             if (!executed) {
-                System.out.println("\n⚠️  Opción inválida. Por favor selecciona una opción válida.\n");
+                System.out.println("\n[!] Opcion invalida. Por favor selecciona una opcion valida.\n");
             } else if ("4".equals(option)) {
                 // Si se cambió el destinatario, volver a seleccionar
                 selectRecipientAndShowMenu();
@@ -336,169 +350,6 @@ public class ChatClient {
             }
         }
     }
-    
-    // Maneja la opción de chat
-    private void handleChatOption() {
-        System.out.println("\n───────────────────────────────────────────────────");
-        System.out.println("           ENVIAR MENSAJE DE CHAT");
-        System.out.println("───────────────────────────────────────────────────");
-        System.out.println("Destinatario: " + currentRecipient);
-        System.out.println("(Escribe 'volver' para regresar al menú)\n");
-        
-        while (running && currentRecipient != null) {
-            System.out.print("Mensaje: ");
-            String message = scanner.nextLine().trim();
-            
-            if (message.equalsIgnoreCase("volver")) {
-                break;
-            }
-            
-            if (!message.isEmpty()) {
-                sendMessage("MSG|" + currentRecipient + "|" + message);
-            }
-        }
-    }
-    
-    // Maneja la opción de archivo
-    private void handleFileOption() {
-        System.out.println("\n───────────────────────────────────────────────────");
-        System.out.println("              ENVIAR ARCHIVO");
-        System.out.println("───────────────────────────────────────────────────");
-        System.out.println("Destinatario: " + currentRecipient);
-        System.out.print("Ruta del archivo (o 'volver' para regresar): ");
-        
-        String filePath = scanner.nextLine().trim();
-        
-        if (filePath.equalsIgnoreCase("volver")) {
-            return;
-        }
-        
-        if (!filePath.isEmpty()) {
-            sendFile(filePath);
-        } else {
-            System.out.println("⚠️  Ruta de archivo no válida.\n");
-        }
-    }
-    
-    // Maneja la opción de video
-    private void handleVideoOption() {
-        System.out.println("\n───────────────────────────────────────────────────");
-        System.out.println("            VIDELLAMADA");
-        System.out.println("───────────────────────────────────────────────────");
-        System.out.println("Destinatario: " + currentRecipient);
-        
-        if (!videoActive) {
-            System.out.println("\nIniciando videollamada con " + currentRecipient + "...");
-            videoActive = true;
-            // Enviar comando de video privado al servidor
-            sendMessage("VIDEO|START|" + currentRecipient);
-            new Thread(this::sendVideo).start();
-            new Thread(this::receiveVideo).start();
-            System.out.println("📹 Videollamada activada. Escribe 'detener' para finalizar.\n");
-            
-            // Esperar comando para detener
-            while (videoActive && running) {
-                String input = scanner.nextLine().trim();
-                if (input.equalsIgnoreCase("detener") || input.equalsIgnoreCase("stop")) {
-                    videoActive = false;
-                    sendMessage("VIDEO|STOP");
-                    System.out.println("📴 Videollamada detenida.\n");
-                    break;
-                }
-            }
-        } else {
-            System.out.println("⚠️  Ya hay una videollamada activa. Detén la actual primero.\n");
-        }
-    }
-
-    // Maneja la entrada del usuario (método antiguo, ahora no se usa directamente)
-    private void handleUserInput() {
-        while (running) {
-            try {
-                String input = scanner.nextLine();
-
-                if (input == null || input.trim().isEmpty()) {
-                    continue;
-                }
-
-                if (input.startsWith("/")) {
-                    handleCommand(input);
-                } else {
-                    // Enviar mensaje privado al destinatario actual
-                    if (currentRecipient == null || currentRecipient.isEmpty()) {
-                        System.out.println("⚠️  Error: No has seleccionado un destinatario.");
-                        System.out.println("   Usa /chat <usuario> para seleccionar un destinatario primero.");
-                        System.out.println("   Usa /users para ver los usuarios disponibles.\n");
-                    } else {
-                        sendMessage("MSG|" + currentRecipient + "|" + input);
-                    }
-                }
-
-            } catch (Exception e) {
-                if (running) {
-                    System.err.println("Error: " + e.getMessage());
-                }
-            }
-        }
-    }
-
-    // Maneja comandos especiales del cliente
-    private void handleCommand(String input) {
-        String[] parts = input.split("\\s+", 2);
-        String command = parts[0].toLowerCase();
-
-        switch (command) {
-            case "/chat":
-                if (parts.length < 2) {
-                    System.out.println("Uso: /chat <usuario>");
-                    System.out.println("Ejemplo: /chat juan");
-                    if (currentRecipient != null) {
-                        System.out.println("Destinatario actual: " + currentRecipient);
-                    }
-                } else {
-                    String newRecipient = parts[1].trim();
-                    currentRecipient = newRecipient;
-                    System.out.println("✓ Destinatario seleccionado: " + currentRecipient);
-                    System.out.println("  Ahora puedes escribir mensajes que solo verá " + currentRecipient + "\n");
-                }
-                break;
-                
-            case "/users":
-                sendMessage("USERS");
-                break;
-                
-            case "/logout":
-                sendMessage("LOGOUT");
-                running = false;
-                break;
-
-            case "/file":
-                if (currentRecipient == null || currentRecipient.isEmpty()) {
-                    System.out.println("⚠️  Error: No has seleccionado un destinatario.");
-                    System.out.println("   Usa /chat <usuario> para seleccionar un destinatario primero.");
-                } else if (parts.length < 2) {
-                    System.out.println("Uso: /file <ruta_del_archivo>");
-                    System.out.println("El archivo se enviará a: " + currentRecipient);
-                } else {
-                    sendFile(parts[1]);
-                }
-                break;
-
-            case "/help":
-                showHelp();
-                break;
-                
-            case "/video":
-                // El video ahora se maneja desde el menú principal
-                System.out.println("⚠️  Usa el menú principal (opción 3) para iniciar videollamada.");
-                break;
-
-            default:
-                System.out.println("Comando desconocido: " + command);
-                System.out.println("Escribe /help para ver los comandos disponibles");
-        }
-    }
-
     // Métodos públicos para que los comandos puedan acceder
     public String getCurrentRecipient() {
         return currentRecipient;
@@ -522,20 +373,43 @@ public class ChatClient {
     
     public void startVideoCall(String recipient) {
         videoActive = true;
-        sendMessage("VIDEO|START|" + recipient);
-        new Thread(this::sendVideo).start();
-        new Thread(this::receiveVideo).start();
+        
+        // Crear ventana de video solo cuando se inicia la videollamada
+        if (videoFrame == null) {
+            videoPanel = new JPanel(new GridLayout(0, 2, 5, 5));
+            videoFrame = new JFrame("Videollamada");
+            videoFrame.add(new JScrollPane(videoPanel));
+            videoFrame.setSize(640, 480);
+            videoFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+            videoFrame.setVisible(true);
+        }
+        
+        sendMessage(Constants.CMD_VIDEO + Constants.PROTOCOL_SEPARATOR + "START" + 
+                   Constants.PROTOCOL_SEPARATOR + recipient);
+        executorService.submit(this::sendVideo);
+        executorService.submit(this::receiveVideo);
     }
     
     public void stopVideoCall() {
         videoActive = false;
-        sendMessage("VIDEO|STOP");
+        sendMessage(Constants.CMD_VIDEO + Constants.PROTOCOL_SEPARATOR + "STOP");
+        
+        // Cerrar y limpiar la ventana de video
+        if (videoFrame != null) {
+            SwingUtilities.invokeLater(() -> {
+                videoFrame.setVisible(false);
+                videoFrame.dispose();
+                videoFrame = null;
+                videoPanel = null;
+                videoViews.clear();
+            });
+        }
     }
     
     // Envía un archivo al servidor (al destinatario actual)
     public void sendFile(String filePath) {
         if (currentRecipient == null || currentRecipient.isEmpty()) {
-            System.out.println("⚠️  Error: No has seleccionado un destinatario.");
+            System.out.println("[!] Error: No has seleccionado un destinatario.");
             return;
         }
         
@@ -556,18 +430,18 @@ public class ChatClient {
             String fileName = path.getFileName().toString();
             int fileSize = fileData.length;
 
-            if (fileData.length > 50 * 1024 * 1024) { // 50MB límite
-                System.out.println("Archivo demasiado grande (max 50MB)");
+            if (fileData.length > Constants.MAX_FILE_SIZE_BYTES) {
+                System.out.println("Archivo demasiado grande (max " + Constants.MAX_FILE_SIZE_MB + "MB)");
                 return;
             }
 
             // Avisar al servidor que viene un archivo (formato: FILE|destinatario|nombre|tamaño)
-            sendMessage("FILE|" + currentRecipient + "|" + fileName + "|" + fileSize);
-            try {
-                Thread.sleep(100); 
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt(); 
-            }
+            sendMessage(Constants.CMD_FILE + Constants.PROTOCOL_SEPARATOR + currentRecipient + 
+                       Constants.PROTOCOL_SEPARATOR + fileName + 
+                       Constants.PROTOCOL_SEPARATOR + fileSize);
+            
+            // No necesitamos Thread.sleep aquí - el servidor leerá cuando esté listo
+            // El flush() asegura que el mensaje se envíe inmediatamente
 
             // Enviar tamaño y datos
             dataOut.write(fileData);
@@ -592,168 +466,299 @@ public class ChatClient {
         }
     }
 
-    private void showHelp() {
-        System.out.println("\n─────────────────────────────────────────");
-        System.out.println("COMANDOS DISPONIBLES:");
-        System.out.println("─────────────────────────────────────────");
-        System.out.println("  /chat <usuario>");
-        System.out.println("    Selecciona el destinatario para tus mensajes");
-        System.out.println("    Ejemplo: /chat juan");
-        System.out.println();
-        System.out.println("  /users");
-        System.out.println("    Muestra la lista de usuarios conectados");
-        System.out.println();
-        System.out.println("  Mensaje normal:");
-        System.out.println("    Escribe tu mensaje y presiona Enter");
-        System.out.println("    (Solo funciona si has seleccionado un destinatario)");
-        System.out.println();
-        System.out.println("  /file <ruta>");
-        System.out.println("    Envía un archivo al destinatario actual");
-        System.out.println();
-        System.out.println("  /video");
-        System.out.println("    Activa/desactiva la videollamada");
-        System.out.println();
-        System.out.println("  /logout");
-        System.out.println("    Cierra la sesión y sale del chat");
-        System.out.println();
-        System.out.println("  /help");
-        System.out.println("    Muestra esta ayuda");
-        System.out.println("─────────────────────────────────────────\n");
-        if (currentRecipient != null) {
-            System.out.println("Destinatario actual: " + currentRecipient + "\n");
-        }
-    }
-
     // Desconecta del servidor
     private void disconnect() {
         running = false;
+        videoActive = false; // Detener video si está activo
 
-        try {
-            if (in != null) in.close();
-            if (out != null) out.close();
-            if (dataIn != null) dataIn.close();
-            if (dataOut != null) dataOut.close();
-            if (socket != null && !socket.isClosed()) socket.close();
-            // No cerramos scanner para no matar System.in
-        } catch (IOException e) {
-            System.err.println("Error al cerrar conexión: " + e.getMessage());
+        // Cerrar ventana de video si está abierta
+        if (videoFrame != null) {
+            SwingUtilities.invokeLater(() -> {
+                if (videoFrame != null) {
+                    videoFrame.setVisible(false);
+                    videoFrame.dispose();
+                    videoFrame = null;
+                    videoPanel = null;
+                    videoViews.clear();
+                }
+            });
         }
 
-        System.out.println("\nDesconectado del servidor. ¡Hasta luego!");
+        // Cerrar todos los recursos de manera ordenada
+        try {
+            if (videoOut != null) {
+                try {
+                    videoOut.close();
+                } catch (IOException e) {
+                    // Ignorar errores al cerrar videoOut
+                }
+            }
+            if (dataOut != null) {
+                try {
+                    dataOut.close();
+                } catch (IOException e) {
+                    // Ignorar errores al cerrar dataOut
+                }
+            }
+            if (dataIn != null) {
+                try {
+                    dataIn.close();
+                } catch (IOException e) {
+                    // Ignorar errores al cerrar dataIn
+                }
+            }
+            if (out != null) {
+                out.close();
+            }
+            if (in != null) {
+                in.close();
+            }
+            if (videoSocket != null && !videoSocket.isClosed()) {
+                videoSocket.close();
+            }
+            if (socket != null && !socket.isClosed()) {
+                socket.close();
+            }
+        } catch (IOException e) {
+            System.err.println("Error al cerrar conexion: " + e.getMessage());
+        } finally {
+            // Cerrar el pool de threads
+            if (executorService != null) {
+                executorService.shutdown();
+                try {
+                    if (!executorService.awaitTermination(Constants.THREAD_SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                        executorService.shutdownNow();
+                        if (!executorService.awaitTermination(2, TimeUnit.SECONDS)) {
+                            System.err.println("Advertencia: Algunos threads del cliente no terminaron correctamente");
+                        }
+                    }
+                } catch (InterruptedException e) {
+                    executorService.shutdownNow();
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+
+        System.out.println("\nDesconectado del servidor. !Hasta luego!");
     }
     private void sendVideo() {
-        VideoCapture cam = new VideoCapture(0);
-        if (!cam.isOpened()) {
-            System.out.println("No se pudo abrir la cámara.");
-            return;
-        }
-
-        Mat frame = new Mat();
+        VideoCapture cam = null;
+        Mat frame = null;
+        int consecutiveFailures = 0;
+        final int MAX_CONSECUTIVE_FAILURES = 10; // Máximo de fallos consecutivos antes de detener
+        
         try {
-            while (videoActive && cam.read(frame)) {
-                MatOfByte mob = new MatOfByte();
-                Imgcodecs.imencode(".jpg", frame, mob);
-                byte[] bytes = mob.toArray();
+            // Intentar abrir la cámara con un pequeño delay para inicialización
+            cam = new VideoCapture(Constants.VIDEO_CAMERA_INDEX);
+            
+            // Dar tiempo a la cámara para inicializarse (especialmente importante en Windows)
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            
+            if (!cam.isOpened()) {
+                System.err.println("\n[ERROR] No se pudo abrir la cámara.");
+                System.err.println("Posibles causas:");
+                System.err.println("  - La cámara está siendo usada por otra aplicación");
+                System.err.println("  - La cámara no está conectada o no funciona");
+                System.err.println("  - Problemas con los drivers de la cámara");
+                System.err.println("  - Permisos insuficientes para acceder a la cámara\n");
+                videoActive = false;
+                sendMessage(Constants.CMD_VIDEO + Constants.PROTOCOL_SEPARATOR + "STOP");
+                return;
+            }
 
-                // Enviar el frame al servidor
-                videoOut.writeInt(bytes.length);
-                videoOut.write(bytes);
-                videoOut.flush();
+            frame = new Mat();
+            System.out.println("[VIDEO] Cámara iniciada correctamente. Transmitiendo...\n");
+            
+            try {
+                while (videoActive && running) {
+                    // Intentar leer un frame
+                    boolean frameRead = cam.read(frame);
+                    
+                    if (!frameRead || frame.empty()) {
+                        consecutiveFailures++;
+                        
+                        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                            System.err.println("\n[ERROR] No se pueden capturar más frames de la cámara.");
+                            System.err.println("La cámara puede haberse desconectado o estar siendo usada por otra aplicación.\n");
+                            break;
+                        }
+                        
+                        // Esperar un poco antes de reintentar
+                        try {
+                            Thread.sleep(100);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                        continue;
+                    }
+                    
+                    // Frame leído correctamente, resetear contador
+                    consecutiveFailures = 0;
 
-                // Mostrar el frame localmente 👇
-                BufferedImage img = ImageIO.read(new ByteArrayInputStream(bytes));
-                if (img != null) {
-                    SwingUtilities.invokeLater(() -> {
-                        JLabel label = videoViews.computeIfAbsent("Yo", s -> {
-                            JLabel l = new JLabel();
-                            videoPanel.add(l);
-                            videoPanel.revalidate();
-                            videoPanel.repaint();
-                            return l;
-                        });
-                        label.setIcon(new ImageIcon(img));
-                    });
+                    // Verificar que videoOut esté disponible antes de escribir
+                    if (videoOut == null || videoSocket == null || videoSocket.isClosed()) {
+                        System.err.println("[ERROR] Conexión de video perdida.");
+                        break;
+                    }
+
+                    try {
+                        // Codificar frame a JPEG
+                        MatOfByte mob = new MatOfByte();
+                        Imgcodecs.imencode(".jpg", frame, mob);
+                        byte[] bytes = mob.toArray();
+                        
+                        if (bytes.length == 0) {
+                            continue; // Frame vacío, saltar
+                        }
+
+                        // Enviar el frame al servidor
+                        videoOut.writeInt(bytes.length);
+                        videoOut.write(bytes);
+                        videoOut.flush();
+                        
+                        // Mostrar el frame localmente (solo si la ventana está creada)
+                        if (videoPanel != null) {
+                            try {
+                                BufferedImage img = ImageIO.read(new ByteArrayInputStream(bytes));
+                                if (img != null) {
+                                    SwingUtilities.invokeLater(() -> {
+                                        if (videoPanel != null) {
+                                            JLabel label = videoViews.computeIfAbsent("Yo", s -> {
+                                                JLabel l = new JLabel();
+                                                videoPanel.add(l);
+                                                videoPanel.revalidate();
+                                                videoPanel.repaint();
+                                                return l;
+                                            });
+                                            label.setIcon(new ImageIcon(img));
+                                        }
+                                    });
+                                }
+                            } catch (Exception e) {
+                                // Error al mostrar frame local, continuar enviando
+                            }
+                        }
+                    } catch (IOException e) {
+                        System.err.println("[ERROR] Error enviando video: " + e.getMessage());
+                        break;
+                    } catch (Exception e) {
+                        System.err.println("[ERROR] Error procesando frame: " + e.getMessage());
+                        // Continuar intentando
+                        continue;
+                    }
+
+                    // Control de FPS
+                    try {
+                        Thread.sleep(Constants.VIDEO_FPS_DELAY_MS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
                 }
-
-                Thread.sleep(50); // 20 FPS aprox
+            } catch (Exception e) {
+                System.err.println("[ERROR] Error en captura de video: " + e.getMessage());
+                e.printStackTrace();
+            } finally {
+                // Liberar el frame
+                if (frame != null) {
+                    frame.release();
+                }
             }
         } catch (Exception e) {
+            System.err.println("\n[ERROR] Error inicializando cámara: " + e.getMessage());
+            System.err.println("Detalles: " + e.getClass().getSimpleName());
             e.printStackTrace();
+            videoActive = false;
         } finally {
-            cam.release();
+            // Guardar estado antes de cambiar
+            boolean wasActive = videoActive;
+            videoActive = false;
+            
+            // Asegurar que la cámara se libere siempre
+            if (cam != null) {
+                try {
+                    cam.release();
+                    System.out.println("[VIDEO] Cámara liberada correctamente.");
+                } catch (Exception e) {
+                    System.err.println("[ERROR] Error liberando cámara: " + e.getMessage());
+                }
+            }
+            
+            // Notificar al servidor que se detuvo el video si estaba activo
+            if (wasActive) {
+                try {
+                    sendMessage(Constants.CMD_VIDEO + Constants.PROTOCOL_SEPARATOR + "STOP");
+                } catch (Exception e) {
+                    // Ignorar si no se puede enviar el mensaje
+                }
+            }
         }
     }
     private void receiveVideo() {
-        try (DataInputStream videoIn = new DataInputStream(videoSocket.getInputStream())) {
-            while (videoActive) {
-                int nameLen = videoIn.readInt();
-                byte[] nameBytes = new byte[nameLen];
-                videoIn.readFully(nameBytes);
-                String sender = new String(nameBytes);
+        DataInputStream videoIn = null;
+        try {
+            if (videoSocket == null || videoSocket.isClosed()) {
+                return;
+            }
+            videoIn = new DataInputStream(videoSocket.getInputStream());
+            
+            while (videoActive && running && !videoSocket.isClosed()) {
+                try {
+                    int nameLen = videoIn.readInt();
+                    byte[] nameBytes = new byte[nameLen];
+                    videoIn.readFully(nameBytes);
+                    String sender = new String(nameBytes);
 
-                int frameLen = videoIn.readInt();
-                byte[] frame = new byte[frameLen];
-                videoIn.readFully(frame);
+                    int frameLen = videoIn.readInt();
+                    byte[] frame = new byte[frameLen];
+                    videoIn.readFully(frame);
 
-                BufferedImage img = ImageIO.read(new ByteArrayInputStream(frame));
-                if (img != null) {
-                    SwingUtilities.invokeLater(() -> {
-                        JLabel label = videoViews.computeIfAbsent(sender, s -> {
-                            JLabel l = new JLabel("Cargando...");
-                            videoPanel.add(l);
-                            videoPanel.revalidate();
-                            videoPanel.repaint();
-                            return l;
+                    BufferedImage img = ImageIO.read(new ByteArrayInputStream(frame));
+                    if (img != null && videoPanel != null) {
+                        SwingUtilities.invokeLater(() -> {
+                            if (videoPanel != null) {
+                                JLabel label = videoViews.computeIfAbsent(sender, s -> {
+                                    JLabel l = new JLabel("Cargando...");
+                                    videoPanel.add(l);
+                                    videoPanel.revalidate();
+                                    videoPanel.repaint();
+                                    return l;
+                                });
+                                label.setIcon(new ImageIcon(img));
+                            }
                         });
-                        label.setIcon(new ImageIcon(img));
-                    });
+                    }
+                } catch (IOException e) {
+                    if (running) {
+                        System.out.println("Error al recibir video: " + e.getMessage());
+                    }
+                    break;
                 }
             }
-        } catch (IOException e) {
-            System.out.println("Error al recibir video: " + e.getMessage());
+        } catch (Exception e) {
+            System.err.println("Error en recepción de video: " + e.getMessage());
+        } finally {
+            // Cerrar el stream de video
+            if (videoIn != null) {
+                try {
+                    videoIn.close();
+                } catch (IOException e) {
+                    // Ignorar errores al cerrar
+                }
+            }
         }
     }
 
-
-    private void startVideoCapture() {
-        new Thread(() -> {
-            try (OpenCVFrameGrabber grabber = new OpenCVFrameGrabber(0)) {
-                grabber.start();
-                videoActive = true;
-                while (videoActive) {
-                    org.bytedeco.javacv.Frame frame = grabber.grab();
-                    if (frame == null) continue;
-                    BufferedImage image = new Java2DFrameConverter().convert(frame);
-                    if (image == null) continue;
-
-                    // Convertir frame a bytes (JPEG)
-                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                    ImageIO.write(image, "jpg", baos);
-                    byte[] frameBytes = baos.toByteArray();
-
-                    // Enviar al servidor
-                    synchronized (dataOut) {
-                        dataOut.writeInt(frameBytes.length);
-                        dataOut.write(frameBytes);
-                        dataOut.flush();
-                    }
-
-                    // Mostrar video localmente
-                    SwingUtilities.invokeLater(() -> {
-                        videoLabel.setIcon(new ImageIcon(image));
-                    });
-
-                    Thread.sleep(33); // ~30 FPS
-                }
-                grabber.stop();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }).start();
-    }
     public static void main(String[] args) {
         ChatClient client = new ChatClient();
         Runtime.getRuntime().addShutdownHook(new Thread(client::disconnect));
         client.connect();
     }
 }
+

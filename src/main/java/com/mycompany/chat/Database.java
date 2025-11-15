@@ -1,17 +1,29 @@
 package com.mycompany.chat;
 
+import com.mycompany.chat.config.ConfigManager;
+import com.mycompany.chat.security.PasswordHasher;
 import java.sql.*;
 
 public class Database {
-    private static final String URL = "jdbc:mysql://localhost:3306/chatdb?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
-    private static String USER = "root";
-    private static String PASS = "root";
+    // La URL ahora se obtiene de ConfigManager
+    private static String getUrl() {
+        return ConfigManager.getDbUrl();
+    }
+    
+    private static String getUser() {
+        return ConfigManager.getDbUser();
+    }
+    
+    private static String getPassword() {
+        return ConfigManager.getDbPassword();
+    }
     
     public static void setUser(String new_user){
-        Database.USER = new_user;    
+        ConfigManager.setDbUser(new_user);
     }
+    
     public static void setPassword(String new_password){
-        Database.PASS = new_password;
+        ConfigManager.setDbPassword(new_password);
     }
 
     static {
@@ -24,7 +36,7 @@ public class Database {
     }
 
     private static Connection getConnection() throws SQLException {
-        return DriverManager.getConnection(URL, USER, PASS);
+        return DriverManager.getConnection(getUrl(), getUser(), getPassword());
     }
 
     public static boolean authenticate(String username, String password) {
@@ -45,9 +57,9 @@ public class Database {
                     return false; // usuario no existe
                 }
 
-                String storedPassword = rs.getString("password");
-                // Comparación en texto plano (porque en schema.sql también están en texto plano)
-                return password.equals(storedPassword);
+                String storedPasswordHash = rs.getString("password");
+                // Verificar contraseña usando BCrypt
+                return PasswordHasher.verifyPassword(password, storedPasswordHash);
             }
 
         } catch (SQLException e) {
@@ -71,13 +83,16 @@ public class Database {
             return false;
         }
 
+        // Hashear la contraseña antes de almacenarla
+        String hashedPassword = PasswordHasher.hashPassword(password);
+
         String sql = "INSERT INTO users (username, password) VALUES (?, ?)";
 
         try (Connection conn = getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setString(1, username);
-            ps.setString(2, password); // por ahora texto plano
+            ps.setString(2, hashedPassword); // Almacenar hash en lugar de texto plano
 
             ps.executeUpdate();
             return true;
