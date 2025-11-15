@@ -29,21 +29,29 @@ public class FileCommand implements Command {
         System.out.println("              ENVIAR ARCHIVO");
         System.out.println("----------------------------------------------------");
         System.out.println("Destinatario: " + recipient);
-        System.out.print("Ruta del archivo (o 'volver' para regresar): ");
+        System.out.println("NOTA: Los archivos se envian en segundo plano.");
+        System.out.println("      Puedes seguir usando el chat mientras se envian.");
+        System.out.println("(Escribe 'volver' en cualquier momento para regresar al menu)\n");
         
-        String filePath = scanner.nextLine().trim();
-        
-        if (filePath.equalsIgnoreCase("volver")) {
-            return true;
-        }
-        
-        if (!filePath.isEmpty()) {
+        while (client.isRunning()) {
+            System.out.print("Ruta del archivo: ");
+            String filePath = scanner.nextLine().trim();
+            
+            if (filePath.equalsIgnoreCase("volver")) {
+                break;
+            }
+            
+            if (filePath.isEmpty()) {
+                System.out.println("[!] Ruta de archivo no valida.\n");
+                continue;
+            }
+            
+            // Enviar archivo en hilo separado (no bloquea)
             client.sendFile(filePath);
-            return true;
-        } else {
-            System.out.println("[!] Ruta de archivo no valida.\n");
-            return false;
+            System.out.println("[ARCHIVO] Iniciando envio de archivo en segundo plano...\n");
         }
+        
+        return true;
     }
     
     @Override

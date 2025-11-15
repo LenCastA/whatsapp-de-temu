@@ -1,8 +1,9 @@
 package com.mycompany.chat.commands;
 
+import java.util.Scanner;
+
 import com.mycompany.chat.ChatClient;
 import com.mycompany.chat.util.Constants;
-import java.util.Scanner;
 
 /**
  * Comando para enviar mensajes de chat privados.
@@ -29,9 +30,11 @@ public class ChatCommand implements Command {
         System.out.println("           ENVIAR MENSAJE DE CHAT");
         System.out.println("----------------------------------------------------");
         System.out.println("Destinatario: " + recipient);
-        System.out.println("(Escribe 'volver' para regresar al menu)\n");
+        System.out.println("(Escribe 'volver' para regresar al menu)");
+        System.out.println("NOTA: Los mensajes se envian en segundo plano.");
+        System.out.println("      Puedes seguir escribiendo mientras se envian.\n");
         
-        while (client.isRunning() && recipient != null) {
+        while (client.isRunning()) {
             System.out.print("Mensaje: ");
             String message = scanner.nextLine().trim();
             
@@ -46,8 +49,10 @@ public class ChatCommand implements Command {
                                      Constants.MAX_MESSAGE_LENGTH + " caracteres)");
                     continue;
                 }
+                // Enviar mensaje en hilo separado (no bloquea)
                 client.sendMessage(Constants.CMD_MSG + Constants.PROTOCOL_SEPARATOR + 
                                  recipient + Constants.PROTOCOL_SEPARATOR + message);
+                System.out.println("[MENSAJE] Enviando mensaje en segundo plano...");
             }
         }
         
