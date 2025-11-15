@@ -330,63 +330,7 @@ public class ChatClient {
         }
     }
     
-
-    // Maneja comandos especiales del cliente
-    private void handleCommand(String input) {
-        String[] parts = input.split("\\s+", 2);
-        String command = parts[0].toLowerCase();
-
-        switch (command) {
-            case "/chat":
-                if (parts.length < 2) {
-                    System.out.println("Uso: /chat <usuario>");
-                    System.out.println("Ejemplo: /chat juan");
-                    if (currentRecipient != null) {
-                        System.out.println("Destinatario actual: " + currentRecipient);
-                    }
-                } else {
-                    String newRecipient = parts[1].trim();
-                    currentRecipient = newRecipient;
-                    System.out.println("[OK] Destinatario seleccionado: " + currentRecipient);
-                    System.out.println("  Ahora puedes escribir mensajes que solo vera " + currentRecipient + "\n");
-                }
-                break;
-                
-            case "/users":
-                sendMessage("USERS");
-                break;
-                
-            case "/logout":
-                sendMessage("LOGOUT");
-                running = false;
-                break;
-
-            case "/file":
-                if (currentRecipient == null || currentRecipient.isEmpty()) {
-                    System.out.println("[!] Error: No has seleccionado un destinatario.");
-                    System.out.println("   Usa /chat <usuario> para seleccionar un destinatario primero.");
-                } else if (parts.length < 2) {
-                    System.out.println("Uso: /file <ruta_del_archivo>");
-                    System.out.println("El archivo se enviara a: " + currentRecipient);
-                } else {
-                    sendFile(parts[1]);
-                }
-                break;
-
-            case "/help":
-                showHelp();
-                break;
-                
-            case "/video":
-                // El video ahora se maneja desde el menú principal
-                System.out.println("[!] Usa el menu principal (opcion 3) para iniciar videollamada.");
-                break;
-
-            default:
-                System.out.println("Comando desconocido: " + command);
-                System.out.println("Escribe /help para ver los comandos disponibles");
-        }
-    }
+    
 
     // Métodos públicos para que los comandos puedan acceder
     public String getCurrentRecipient() {
@@ -498,37 +442,6 @@ public class ChatClient {
         }
     }
 
-    private void showHelp() {
-        System.out.println("\n----------------------------------------------------");
-        System.out.println("COMANDOS DISPONIBLES:");
-        System.out.println("----------------------------------------------------");
-        System.out.println("  /chat <usuario>");
-        System.out.println("    Selecciona el destinatario para tus mensajes");
-        System.out.println("    Ejemplo: /chat juan");
-        System.out.println();
-        System.out.println("  /users");
-        System.out.println("    Muestra la lista de usuarios conectados");
-        System.out.println();
-        System.out.println("  Mensaje normal:");
-        System.out.println("    Escribe tu mensaje y presiona Enter");
-        System.out.println("    (Solo funciona si has seleccionado un destinatario)");
-        System.out.println();
-        System.out.println("  /file <ruta>");
-        System.out.println("    Envia un archivo al destinatario actual");
-        System.out.println();
-        System.out.println("  /video");
-        System.out.println("    Activa/desactiva la videollamada");
-        System.out.println();
-        System.out.println("  /logout");
-        System.out.println("    Cierra la sesion y sale del chat");
-        System.out.println();
-        System.out.println("  /help");
-        System.out.println("    Muestra esta ayuda");
-        System.out.println("----------------------------------------------------\n");
-        if (currentRecipient != null) {
-            System.out.println("Destinatario actual: " + currentRecipient + "\n");
-        }
-    }
 
     // Desconecta del servidor
     private void disconnect() {
