@@ -17,3 +17,6 @@ target/
 # Sistema operativo
 .DS_Store
 Thumbs.db
+
+downloads/
+*.log
