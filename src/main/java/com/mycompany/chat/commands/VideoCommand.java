@@ -30,21 +30,40 @@ public class VideoCommand implements Command {
         System.out.println("Destinatario: " + recipient);
         
         if (client.isVideoActive()) {
-            System.out.println("[!] Ya hay una videollamada activa. Deten la actual primero.\n");
-            return false;
+            System.out.println("[!] Ya hay una videollamada activa.");
+            System.out.println("NOTA: El video se transmite en segundo plano.");
+            System.out.println("      Puedes enviar mensajes y archivos mientras el video esta activo.");
+            System.out.println("(Escribe 'volver' para regresar al menu o 'detener' para finalizar el video)\n");
+        } else {
+            System.out.println("\nIniciando videollamada con " + recipient + "...");
+            client.startVideoCall(recipient);
+            System.out.println("[VIDEO] Videollamada activada.");
+            System.out.println("NOTA: El video se transmite en segundo plano.");
+            System.out.println("      Puedes enviar mensajes y archivos mientras el video esta activo.");
+            System.out.println("(Escribe 'volver' para regresar al menu o 'detener' para finalizar el video)\n");
         }
         
-        System.out.println("\nIniciando videollamada con " + recipient + "...");
-        client.startVideoCall(recipient);
-        System.out.println("[VIDEO] Videollamada activada. Escribe 'detener' para finalizar.\n");
-        
-        // Esperar comando para detener
-        while (client.isVideoActive() && client.isRunning()) {
+        // Permitir volver al menú o detener el video
+        while (client.isRunning()) {
             String input = scanner.nextLine().trim();
-            if (input.equalsIgnoreCase("detener") || input.equalsIgnoreCase("stop")) {
-                client.stopVideoCall();
-                System.out.println("[VIDEO DETENIDO] Videollamada detenida.\n");
+            
+            if (input.equalsIgnoreCase("volver")) {
+                // Volver al menú sin detener el video (si está activo)
+                if (client.isVideoActive()) {
+                    System.out.println("[VIDEO] Videollamada continua en segundo plano.");
+                    System.out.println("        Puedes enviar mensajes y archivos desde el menu.\n");
+                }
                 break;
+            } else if (input.equalsIgnoreCase("detener") || input.equalsIgnoreCase("stop")) {
+                if (client.isVideoActive()) {
+                    client.stopVideoCall();
+                    System.out.println("[VIDEO DETENIDO] Videollamada detenida.\n");
+                } else {
+                    System.out.println("[!] No hay videollamada activa.\n");
+                }
+                break;
+            } else if (!input.isEmpty()) {
+                System.out.println("[!] Comando no reconocido. Escribe 'volver' o 'detener'.\n");
             }
         }
         

@@ -8,7 +8,6 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.nio.file.Files;
@@ -65,6 +64,7 @@ public class ChatClient {
     private JFrame videoFrame; // Ventana de video (se crea solo cuando se inicia video)
     private JPanel videoPanel; // Panel de video (se crea solo cuando se inicia video)
     private ExecutorService executorService; // Pool de threads para gestionar hilos
+    private final Object dataOutLock = new Object(); // Sincronización para escritura de mensajes y archivos
 
     // Constructor por defecto => localhost:9000
     public ChatClient() {
@@ -125,8 +125,8 @@ public class ChatClient {
             System.out.print("Contrasena: ");
             String password = scanner.nextLine().trim();
 
-            // Enviar login al servidor según nuevo formato
-            sendMessage(Constants.CMD_LOGIN + Constants.PROTOCOL_SEPARATOR + username + 
+            // Enviar login al servidor según nuevo formato (debe ser síncrono)
+            sendMessageBlocking(Constants.CMD_LOGIN + Constants.PROTOCOL_SEPARATOR + username + 
                        Constants.PROTOCOL_SEPARATOR + password);
 
             // Esperar respuesta del login con timeout
@@ -280,8 +280,8 @@ public class ChatClient {
             System.out.println("           SELECCIONAR DESTINATARIO");
             System.out.println("====================================================\n");
             
-            // Solicitar lista de usuarios
-            sendMessage(Constants.CMD_USERS);
+            // Solicitar lista de usuarios (debe ser síncrono)
+            sendMessageBlocking(Constants.CMD_USERS);
             
             // No necesitamos esperar aquí - el mensaje se mostrará cuando llegue
             // El usuario puede ingresar el destinatario inmediatamente
@@ -290,7 +290,7 @@ public class ChatClient {
             String input = scanner.nextLine().trim();
             
             if (input.equalsIgnoreCase("salir") || input.equalsIgnoreCase("exit")) {
-                sendMessage(Constants.CMD_LOGOUT);
+                sendMessageBlocking(Constants.CMD_LOGOUT);
                 running = false;
                 return;
             }
@@ -323,6 +323,14 @@ public class ChatClient {
             System.out.println("              MENU PRINCIPAL");
             System.out.println("====================================================");
             System.out.println("Destinatario actual: " + currentRecipient);
+            if (videoActive) {
+                System.out.println("Estado: [VIDEO ACTIVO] - Videollamada en curso");
+            }
+            System.out.println("----------------------------------------------------");
+            System.out.println("NOTA: Mensajes, archivos y video se envian");
+            System.out.println("      simultaneamente usando multihilos.");
+            System.out.println("      Escribe 'volver' en cualquier momento para");
+            System.out.println("      regresar al menu desde cualquier opcion.");
             System.out.println("----------------------------------------------------");
             
             // Mostrar opciones dinámicamente desde los comandos registrados
@@ -384,7 +392,7 @@ public class ChatClient {
             videoFrame.setVisible(true);
         }
         
-        sendMessage(Constants.CMD_VIDEO + Constants.PROTOCOL_SEPARATOR + "START" + 
+        sendMessageBlocking(Constants.CMD_VIDEO + Constants.PROTOCOL_SEPARATOR + "START" + 
                    Constants.PROTOCOL_SEPARATOR + recipient);
         executorService.submit(this::sendVideo);
         executorService.submit(this::receiveVideo);
@@ -392,7 +400,7 @@ public class ChatClient {
     
     public void stopVideoCall() {
         videoActive = false;
-        sendMessage(Constants.CMD_VIDEO + Constants.PROTOCOL_SEPARATOR + "STOP");
+        sendMessageBlocking(Constants.CMD_VIDEO + Constants.PROTOCOL_SEPARATOR + "STOP");
         
         // Cerrar y limpiar la ventana de video
         if (videoFrame != null) {
@@ -406,8 +414,8 @@ public class ChatClient {
         }
     }
     
-    // Envía un archivo al servidor (al destinatario actual)
-    public void sendFile(String filePath) {
+    // Envía un archivo al servidor (al destinatario actual) - versión síncrona interna
+    private void sendFileSync(String filePath) {
         if (currentRecipient == null || currentRecipient.isEmpty()) {
             System.out.println("[!] Error: No has seleccionado un destinatario.");
             return;
@@ -436,34 +444,56 @@ public class ChatClient {
             }
 
             // Avisar al servidor que viene un archivo (formato: FILE|destinatario|nombre|tamaño)
-            sendMessage(Constants.CMD_FILE + Constants.PROTOCOL_SEPARATOR + currentRecipient + 
+            sendMessageSync(Constants.CMD_FILE + Constants.PROTOCOL_SEPARATOR + currentRecipient + 
                        Constants.PROTOCOL_SEPARATOR + fileName + 
                        Constants.PROTOCOL_SEPARATOR + fileSize);
             
-            // No necesitamos Thread.sleep aquí - el servidor leerá cuando esté listo
-            // El flush() asegura que el mensaje se envíe inmediatamente
+            // Enviar tamaño y datos (sincronizado para evitar conflictos con mensajes)
+            synchronized (dataOutLock) {
+                if (dataOut != null && !socket.isClosed()) {
+                    dataOut.write(fileData);
+                    dataOut.flush();
+                }
+            }
 
-            // Enviar tamaño y datos
-            dataOut.write(fileData);
-            dataOut.flush();
-
-            System.out.println("Enviando archivo a " + currentRecipient + ": " + fileName + " (" + fileSize + " bytes)");
+            System.out.println("[ARCHIVO] Enviando archivo a " + currentRecipient + ": " + fileName + " (" + fileSize + " bytes)");
 
         } catch (IOException e) {
-            System.err.println("Error enviando archivo: " + e.getMessage());
+            System.err.println("[ERROR] Error enviando archivo: " + e.getMessage());
         }
     }
+    
+    // Envía un archivo al servidor en un hilo separado (versión pública asíncrona)
+    public void sendFile(String filePath) {
+        executorService.submit(() -> {
+            sendFileSync(filePath);
+        });
+    }
 
-    // Envía un mensaje al servidor
-    public void sendMessage(String message) {
-        try{
-            if (dataOut != null && !socket.isClosed()) {
-                dataOut.writeUTF(message);
-                dataOut.flush();
+    // Envía un mensaje al servidor - versión síncrona interna (thread-safe)
+    private void sendMessageSync(String message) {
+        synchronized (dataOutLock) {
+            try{
+                if (dataOut != null && !socket.isClosed()) {
+                    dataOut.writeUTF(message);
+                    dataOut.flush();
+                }
+            } catch (IOException e){
+                System.err.println("[ERROR] Error enviando mensaje: "+e.getMessage());
             }
-        } catch (IOException e){
-            System.err.println("Error enviando mensaje: "+e.getMessage());
         }
+    }
+    
+    // Envía un mensaje al servidor en un hilo separado (versión pública asíncrona)
+    public void sendMessage(String message) {
+        executorService.submit(() -> {
+            sendMessageSync(message);
+        });
+    }
+    
+    // Envía un mensaje de forma síncrona (para comandos críticos como LOGIN, LOGOUT)
+    public void sendMessageBlocking(String message) {
+        sendMessageSync(message);
     }
 
     // Desconecta del servidor
@@ -567,7 +597,7 @@ public class ChatClient {
                 System.err.println("  - Problemas con los drivers de la cámara");
                 System.err.println("  - Permisos insuficientes para acceder a la cámara\n");
                 videoActive = false;
-                sendMessage(Constants.CMD_VIDEO + Constants.PROTOCOL_SEPARATOR + "STOP");
+                sendMessageBlocking(Constants.CMD_VIDEO + Constants.PROTOCOL_SEPARATOR + "STOP");
                 return;
             }
 
@@ -693,7 +723,7 @@ public class ChatClient {
             // Notificar al servidor que se detuvo el video si estaba activo
             if (wasActive) {
                 try {
-                    sendMessage(Constants.CMD_VIDEO + Constants.PROTOCOL_SEPARATOR + "STOP");
+                    sendMessageBlocking(Constants.CMD_VIDEO + Constants.PROTOCOL_SEPARATOR + "STOP");
                 } catch (Exception e) {
                     // Ignorar si no se puede enviar el mensaje
                 }
@@ -761,4 +791,5 @@ public class ChatClient {
         client.connect();
     }
 }
+
 
