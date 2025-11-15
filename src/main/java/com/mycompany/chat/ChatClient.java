@@ -35,14 +35,9 @@ import org.opencv.core.MatOfByte;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.videoio.VideoCapture;
 
-import com.mycompany.chat.commands.ChangeRecipientCommand;
-import com.mycompany.chat.commands.ChatCommand;
 import com.mycompany.chat.commands.Command;
 import com.mycompany.chat.commands.CommandFactory;
-import com.mycompany.chat.commands.ExitCommand;
-import com.mycompany.chat.commands.FileCommand;
 import com.mycompany.chat.commands.MenuCommandInvoker;
-import com.mycompany.chat.commands.VideoCommand;
 
 public class ChatClient {
     private String host;
@@ -581,24 +576,22 @@ public class ChatClient {
         final int MAX_CONSECUTIVE_FAILURES = 10; // Máximo de fallos consecutivos antes de detener
         
         try {
-            // Intentar abrir la cámara con un pequeño delay para inicialización
-            cam = new VideoCapture(Constants.VIDEO_CAMERA_INDEX);
+            // Intentar abrir la cámara con múltiples intentos y diferentes índices
+            // En Windows, a veces el índice 0 no funciona y hay que probar otros
+            cam = openCameraWithRetry();
             
-            // Dar tiempo a la cámara para inicializarse (especialmente importante en Windows)
-            try {
-                Thread.sleep(500);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-            
-            if (!cam.isOpened()) {
-                System.err.println("\n[ERROR] No se pudo abrir la cámara.");
+            if (cam == null || !cam.isOpened()) {
+                System.err.println("\n[ERROR] No se pudo abrir la cámara después de varios intentos.");
                 System.err.println("Posibles causas:");
-                System.err.println("  - La cámara está siendo usada por otra aplicación");
+                System.err.println("  - La cámara está siendo usada por otra aplicación (Zoom, Teams, Skype, etc.)");
                 System.err.println("  - La cámara no está conectada o no funciona");
                 System.err.println("  - Problemas con los drivers de la cámara");
-                System.err.println("  - Permisos insuficientes para acceder a la cámara\n");
+                System.err.println("  - Permisos insuficientes para acceder a la cámara");
+                System.err.println("  - Windows Media Foundation tiene problemas con la cámara\n");
+                System.err.println("Sugerencias:");
+                System.err.println("  - Cierra otras aplicaciones que puedan estar usando la cámara");
+                System.err.println("  - Reinicia la aplicación");
+                System.err.println("  - Verifica los permisos de la cámara en Configuración de Windows\n");
                 videoActive = false;
                 sendMessageBlocking(Constants.CMD_VIDEO + Constants.PROTOCOL_SEPARATOR + "STOP");
                 return;
@@ -609,8 +602,28 @@ public class ChatClient {
             
             try {
                 while (videoActive && running) {
-                    // Intentar leer un frame
-                    boolean frameRead = cam.read(frame);
+                    // Intentar leer un frame con manejo mejorado de errores
+                    boolean frameRead = false;
+                    try {
+                        frameRead = cam.read(frame);
+                    } catch (Exception e) {
+                        // Capturar excepciones de OpenCV (como los warnings de MSMF)
+                        // Estos warnings son comunes en Windows y no siempre indican un error fatal
+                        consecutiveFailures++;
+                        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                            System.err.println("\n[ERROR] No se pueden capturar más frames de la cámara.");
+                            System.err.println("La cámara puede haberse desconectado o estar siendo usada por otra aplicación.\n");
+                            break;
+                        }
+                        // Esperar un poco más antes de reintentar cuando hay errores
+                        try {
+                            Thread.sleep(200);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                        continue;
+                    }
                     
                     if (!frameRead || frame.empty()) {
                         consecutiveFailures++;
@@ -733,6 +746,65 @@ public class ChatClient {
             }
         }
     }
+    
+    /**
+     * Intenta abrir la cámara con múltiples intentos y diferentes índices.
+     * Esto ayuda a manejar problemas comunes en Windows con Media Foundation.
+     * 
+     * @return VideoCapture abierto o null si falla
+     */
+    private VideoCapture openCameraWithRetry() {
+        // Intentar con el índice configurado primero
+        int[] cameraIndices = {Constants.VIDEO_CAMERA_INDEX, 0, 1, 2};
+        
+        for (int cameraIndex : cameraIndices) {
+            try {
+                VideoCapture cam = new VideoCapture(cameraIndex);
+                
+                // Dar más tiempo a la cámara para inicializarse en Windows
+                // Windows Media Foundation necesita más tiempo que otros sistemas
+                try {
+                    Thread.sleep(1000); // Aumentado a 1 segundo para Windows
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    if (cam != null) {
+                        cam.release();
+                    }
+                    return null;
+                }
+                
+                // Verificar si la cámara se abrió correctamente
+                if (cam.isOpened()) {
+                    // Intentar leer un frame de prueba para verificar que funciona
+                    Mat testFrame = new Mat();
+                    try {
+                        boolean testRead = cam.read(testFrame);
+                        if (testRead && !testFrame.empty()) {
+                            testFrame.release();
+                            if (cameraIndex != Constants.VIDEO_CAMERA_INDEX) {
+                                System.out.println("[VIDEO] Cámara encontrada en índice " + cameraIndex + 
+                                                 " (índice configurado: " + Constants.VIDEO_CAMERA_INDEX + ")");
+                            }
+                            return cam;
+                        }
+                        testFrame.release();
+                    } catch (Exception e) {
+                        // Si falla la lectura de prueba, continuar con el siguiente índice
+                        testFrame.release();
+                    }
+                }
+                
+                // Si llegamos aquí, la cámara no funcionó, liberarla
+                cam.release();
+            } catch (Exception e) {
+                // Continuar con el siguiente índice si este falla
+                // Los warnings de OpenCV se capturan aquí pero no se muestran al usuario
+            }
+        }
+        
+        return null;
+    }
+    
     private void receiveVideo() {
         DataInputStream videoIn = null;
         try {
