@@ -92,8 +92,6 @@ public class ChatClient {
             socket = new Socket(host, port);
             videoSocket = new Socket(host, port+1);
             videoOut = new DataOutputStream(videoSocket.getOutputStream());
-            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            out = new PrintWriter(socket.getOutputStream(), true);
             dataIn = new DataInputStream(socket.getInputStream());
             dataOut = new DataOutputStream(socket.getOutputStream());
             
@@ -108,9 +106,6 @@ public class ChatClient {
 
             // Hilo para recibir mensajes
             Thread receiveThread = new Thread(this::receiveMessages);
-            
-            // Hilo para leer mensajes del servidor
-            new Thread(this::listenServer).start();
             receiveThread.setDaemon(true);
             receiveThread.start();
 
@@ -160,15 +155,16 @@ public class ChatClient {
     // Recibe mensajes del servidor (hilo separado)
     private void receiveMessages() {
         try {
-            String message;
-            while (running && (message = in.readLine()) != null) {
+            while (running ) {
+                String message = dataIn.readUTF();
                 processIncomingMessage(message);
             }
         } catch (IOException e) {
             if (running) {
-                System.err.println("\nConexion perdida con el servidor");
-                running = false;
+                System.err.println("\nConexion cerrada por el servidor");                
             }
+        } finally {
+            running = false;
         }
     }
 
@@ -586,8 +582,13 @@ public class ChatClient {
 
     // Envía un mensaje al servidor
     public void sendMessage(String message) {
-        if (out != null && !socket.isClosed()) {
-            out.println(message);
+        try{
+            if (dataOut != null && !socket.isClosed()) {
+                dataOut.writeUTF(message);
+                dataOut.flush();
+            }
+        } catch (IOException e){
+            System.err.println("Error enviando mensaje: "+e.getMessage());
         }
     }
 
@@ -713,37 +714,7 @@ public class ChatClient {
         }
     }
 
-    private void listenServer() {
-        try {
-            String line;
-            while (running && (line = in.readLine()) != null) {
-                String[] parts = line.split("\\|", 2);
-                String command = parts[0];
 
-                switch (command) {
-                    case "SERVER":
-                        System.out.println("[Servidor]: " + parts[1]);
-                        break;
-
-                    case "MSG":
-                        System.out.println(parts[1]);
-                        break;
-
-                    case "VIDEO":
-                        // Si el servidor manda "VIDEO|FRAME", recibimos los bytes
-                        if (parts.length > 1 && parts[1].equals("FRAME")) {
-                            receiveVideo();
-                        }
-                        break;
-
-                    default:
-                        System.out.println("[Desconocido]: " + line);
-                }
-            }
-        } catch (IOException e) {
-            System.err.println("Error escuchando servidor: " + e.getMessage());
-        }
-    }
     private void startVideoCapture() {
         new Thread(() -> {
             try (OpenCVFrameGrabber grabber = new OpenCVFrameGrabber(0)) {
