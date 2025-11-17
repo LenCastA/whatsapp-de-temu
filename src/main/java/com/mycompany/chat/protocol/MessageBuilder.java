@@ -150,5 +150,46 @@ public class MessageBuilder {
             .withParam(serverMessage)
             .build();
     }
+
+    /**
+     * Construye el encabezado que antecede al envío de bytes de un archivo.
+     */
+    public static String buildFileTransferMetadata(String fileName, int fileSize) {
+        return create()
+            .withType(Constants.CMD_FILE)
+            .withParam(fileName)
+            .withParam(String.valueOf(fileSize))
+            .build();
+    }
+
+    /**
+     * Construye el comando para solicitar el envío de un archivo a otro usuario.
+     */
+    public static String buildFileTransferRequest(String recipient, String fileName, int fileSize) {
+        return create()
+            .withType(Constants.CMD_FILE)
+            .withParams(recipient, fileName, String.valueOf(fileSize))
+            .build();
+    }
+
+    /**
+     * Construye un comando para iniciar una videollamada.
+     */
+    public static String buildVideoStart(String recipient) {
+        return create()
+            .withType(Constants.CMD_VIDEO)
+            .withParams("START", recipient)
+            .build();
+    }
+
+    /**
+     * Construye un comando para detener la videollamada.
+     */
+    public static String buildVideoStop() {
+        return create()
+            .withType(Constants.CMD_VIDEO)
+            .withParam("STOP")
+            .build();
+    }
 }
 

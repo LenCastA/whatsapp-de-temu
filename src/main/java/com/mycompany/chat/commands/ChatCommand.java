@@ -3,6 +3,7 @@ package com.mycompany.chat.commands;
 import java.util.Scanner;
 
 import com.mycompany.chat.ChatClient;
+import com.mycompany.chat.protocol.MessageBuilder;
 import com.mycompany.chat.util.Constants;
 
 /**
@@ -50,8 +51,7 @@ public class ChatCommand implements Command {
                     continue;
                 }
                 // Enviar mensaje en hilo separado (no bloquea)
-                client.sendMessage(Constants.CMD_MSG + Constants.PROTOCOL_SEPARATOR + 
-                                 recipient + Constants.PROTOCOL_SEPARATOR + message);
+                client.sendMessage(MessageBuilder.buildMessage(recipient, message));
                 System.out.println("[MENSAJE] Enviando mensaje en segundo plano...");
             }
         }

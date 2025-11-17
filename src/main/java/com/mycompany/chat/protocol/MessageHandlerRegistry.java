@@ -1,9 +1,12 @@
 package com.mycompany.chat.protocol;
 
+import com.mycompany.chat.protocol.handlers.FileCommandHandler;
 import com.mycompany.chat.protocol.handlers.LoginHandler;
 import com.mycompany.chat.protocol.handlers.LogoutHandler;
 import com.mycompany.chat.protocol.handlers.MessageCommandHandler;
 import com.mycompany.chat.protocol.handlers.UsersCommandHandler;
+import com.mycompany.chat.protocol.handlers.VideoCommandHandler;
+import com.mycompany.chat.service.DatabaseService;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -19,22 +22,24 @@ import java.util.Map;
 public class MessageHandlerRegistry {
     private final Map<String, MessageHandler> handlers = new HashMap<>();
     
-    /**
-     * Constructor que registra todos los handlers por defecto.
-     */
     public MessageHandlerRegistry() {
-        registerDefaultHandlers();
+        this(new DatabaseService());
+    }
+
+    public MessageHandlerRegistry(DatabaseService databaseService) {
+        registerDefaultHandlers(databaseService);
     }
     
     /**
      * Registra los handlers por defecto del sistema.
      */
-    private void registerDefaultHandlers() {
-        registerHandler(new LoginHandler());
+    private void registerDefaultHandlers(DatabaseService databaseService) {
+        registerHandler(new LoginHandler(databaseService));
         registerHandler(new MessageCommandHandler());
         registerHandler(new UsersCommandHandler());
         registerHandler(new LogoutHandler());
-        // Los handlers de FILE y VIDEO se pueden agregar aquí cuando se implementen
+        registerHandler(new FileCommandHandler());
+        registerHandler(new VideoCommandHandler());
     }
     
     /**

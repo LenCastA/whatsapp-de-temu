@@ -12,16 +12,9 @@ public class UsersCommandHandler implements MessageHandler {
     
     @Override
     public boolean handle(String[] parts, ClientHandler handler) {
-        if (!handler.isAuthenticated()) {
-            handler.sendMessage(Constants.RESP_ERROR + Constants.PROTOCOL_SEPARATOR + 
-                       "Debes iniciar sesión primero");
-            return false;
-        }
-        
         List<String> users = handler.getServer().getConnectedUsers(handler);
         if (users.isEmpty()) {
-            handler.sendMessage(Constants.RESP_SERVER + Constants.PROTOCOL_SEPARATOR + 
-                       "No hay otros usuarios conectados");
+            handler.sendServerMessage("No hay otros usuarios conectados");
         } else {
             StringBuilder userList = new StringBuilder("Usuarios conectados: ");
             for (int i = 0; i < users.size(); i++) {
@@ -30,8 +23,7 @@ public class UsersCommandHandler implements MessageHandler {
                     userList.append(", ");
                 }
             }
-            handler.sendMessage(Constants.RESP_SERVER + Constants.PROTOCOL_SEPARATOR + 
-                      userList.toString());
+            handler.sendServerMessage(userList.toString());
         }
         return true;
     }

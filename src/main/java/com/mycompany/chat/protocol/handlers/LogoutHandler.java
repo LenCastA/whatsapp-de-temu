@@ -12,12 +12,13 @@ public class LogoutHandler implements MessageHandler {
     @Override
     public boolean handle(String[] parts, ClientHandler handler) {
         if (handler.isAuthenticated()) {
-            handler.sendMessage(Constants.RESP_SERVER + Constants.PROTOCOL_SEPARATOR + 
-                       "Cerrando sesión...");
+            handler.sendServerMessage("Cerrando sesión...");
             handler.setRunning(false);
             return true;
         }
-        return false;
+        handler.sendServerMessage("Sesión finalizada.");
+        handler.setRunning(false);
+        return true;
     }
     
     @Override

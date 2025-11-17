@@ -1,7 +1,7 @@
 package com.mycompany.chat.util;
 
-import com.mycompany.chat.Database;
 import com.mycompany.chat.security.PasswordHasher;
+import com.mycompany.chat.service.DatabaseService;
 
 /**
  * Utilidad para inicializar datos de prueba en la base de datos.
@@ -26,6 +26,7 @@ public class TestDataInitializer {
      */
     public static int initializeTestUsers() {
         int created = 0;
+        DatabaseService databaseService = new DatabaseService();
         
         System.out.println("Inicializando usuarios de prueba...");
         
@@ -36,10 +37,10 @@ public class TestDataInitializer {
             try {
                 // Verificar si el usuario ya existe intentando autenticarse
                 // Si no existe, intentar crearlo
-                if (!Database.authenticate(username, password)) {
+                if (!databaseService.autenticarUsuario(username, password)) {
                     // El usuario no existe o la contraseña es incorrecta
                     // Intentar crear el usuario
-                    if (Database.registerUser(username, password)) {
+                    if (databaseService.registrarUsuario(username, password)) {
                         System.out.println("[OK] Usuario creado: " + username);
                         created++;
                     } else {
