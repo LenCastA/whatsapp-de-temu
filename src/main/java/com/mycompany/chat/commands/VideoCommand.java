@@ -1,6 +1,7 @@
 package com.mycompany.chat.commands;
 
 import com.mycompany.chat.ChatClient;
+import com.mycompany.chat.protocol.MessageBuilder;
 import com.mycompany.chat.util.Constants;
 import java.util.Scanner;
 
@@ -32,21 +33,19 @@ public class VideoCommand implements Command {
 
         if (client.isVideoActive()) {
             System.out.println("[!] Ya hay una videollamada activa.");
-            System.out.println("NOTA: El video se transmite en segundo plano.");
-            System.out.println("      Puedes enviar mensajes y archivos mientras el video esta activo.");
-            System.out.println("(Escribe 'volver' para regresar al menu o 'detener' para finalizar el video)\n");
         } else {
             System.out.println("\nIniciando videollamada con " + recipient + "...");
             client.startVideoCall(recipient);
+            if (!client.isVideoActive()) {
+                System.out.println("[ERROR] No se pudo iniciar la videollamada.");
+                return false;
+            }
             System.out.println("[VIDEO] Videollamada activada.");
-            System.out.println("NOTA: El video se transmite en segundo plano.");
-            System.out.println("      Puedes enviar mensajes y archivos mientras el video esta activo.");
-            System.out.println("(Escribe 'volver' para regresar al menu o 'detener' para finalizar el video)\n");
         }
 
-        System.out.println("\nIniciando videollamada con " + recipient + "...");
-        client.startVideoCall(recipient);
-        System.out.println("[VIDEO] Videollamada activada.");
+        System.out.println("NOTA: El video se transmite en segundo plano.");
+        System.out.println("      Puedes enviar mensajes y archivos mientras el video esta activo.");
+        System.out.println("(Escribe 'volver' para regresar al menu o 'detener' para finalizar el video)\n");
         System.out.println("Comandos disponibles:");
         System.out.println("  - Escribe un mensaje para enviarlo a " + recipient);
         System.out.println("  - Escribe '/detener' o '/stop' para finalizar la videollamada\n");
@@ -73,8 +72,7 @@ public class VideoCommand implements Command {
                             Constants.MAX_MESSAGE_LENGTH + " caracteres)");
                     continue;
                 }
-                client.sendMessage(Constants.CMD_MSG + Constants.PROTOCOL_SEPARATOR +
-                        recipient + Constants.PROTOCOL_SEPARATOR + input);
+                client.sendMessage(MessageBuilder.buildMessage(recipient, input));
                 System.out.println("[ENVIADO] Mensaje enviado a " + recipient);
             }
         }

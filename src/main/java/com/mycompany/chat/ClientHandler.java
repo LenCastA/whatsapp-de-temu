@@ -4,10 +4,12 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
+import java.util.concurrent.ExecutorService;
 
 import com.mycompany.chat.protocol.MessageHandler;
 import com.mycompany.chat.protocol.MessageHandlerRegistry;
-import com.mycompany.chat.util.Constants;
+import com.mycompany.chat.protocol.MessageBuilder;
+import com.mycompany.chat.service.DatabaseService;
 
 public class ClientHandler implements Runnable {
     private final Socket socket;
@@ -22,12 +24,12 @@ public class ClientHandler implements Runnable {
     private boolean authenticated;
     private volatile boolean running;
     private final MessageHandlerRegistry handlerRegistry; // Registry para Strategy Pattern
+    private final DatabaseService databaseService;
     
     public Socket getSocket(){return socket;}
     public String getUsername(){return username;}
     public Socket getVideoSocket(){return videoClient;}
     public boolean getVideoActive(){return videoActive;}
-    
     // Métodos públicos para los handlers del Strategy Pattern
     public ChatServer getServer() { return server; }
     public boolean isAuthenticated() { return authenticated; }
@@ -35,13 +37,60 @@ public class ClientHandler implements Runnable {
     public void setAuthenticated(boolean authenticated) { this.authenticated = authenticated; }
     public void setRunning(boolean running) { this.running = running; }
 
-    public ClientHandler(Socket socket, ChatServer server, Socket videoSocket) {
+    public byte[] readBytes(int length) throws IOException {
+        byte[] data = new byte[length];
+        dataIn.readFully(data);
+        return data;
+    }
+
+    public void startVideoStream(String recipient) throws IOException {
+        if (videoActive) {
+            throw new IllegalStateException("Ya existe una videollamada activa");
+        }
+        if (videoClient == null) {
+            throw new IOException("Socket de video no disponible");
+        }
+        videoIn = new DataInputStream(videoClient.getInputStream());
+        videoActive = true;
+        videoRecipient = recipient;
+        ExecutorService executor = server.getThreadPool();
+        if (executor != null) {
+            executor.submit(this::receiveVideo);
+        } else {
+            new Thread(this::receiveVideo).start();
+        }
+    }
+
+    public void stopVideoStream() {
+        videoActive = false;
+        videoRecipient = null;
+        if (videoIn != null) {
+            try {
+                videoIn.close();
+            } catch (IOException ignored) {}
+        }
+    }
+
+    public void sendServerMessage(String message) {
+        sendMessage(MessageBuilder.buildServerMessage(message));
+    }
+
+    public void sendError(String message) {
+        sendMessage(MessageBuilder.buildError(message));
+    }
+
+    public void sendOk(String command, String message) {
+        sendMessage(MessageBuilder.buildOk(command, message));
+    }
+
+    public ClientHandler(Socket socket, ChatServer server, Socket videoSocket, DatabaseService databaseService) {
         this.socket = socket;
         this.videoClient = videoSocket;
         this.server = server;
         this.authenticated = false;
         this.running = true;
-        this.handlerRegistry = new MessageHandlerRegistry();
+        this.databaseService = databaseService;
+        this.handlerRegistry = new MessageHandlerRegistry(databaseService);
     }
 
     @Override
@@ -51,8 +100,7 @@ public class ClientHandler implements Runnable {
             dataIn = new DataInputStream(socket.getInputStream());
             dataOut = new DataOutputStream(socket.getOutputStream());
 
-            sendMessage(Constants.RESP_SERVER + Constants.PROTOCOL_SEPARATOR + 
-                       "Bienvenido al servidor de chat. Por favor inicia sesión.");
+            sendServerMessage("Bienvenido al servidor de chat. Por favor inicia sesión.");
 
             while (running) {
                 String line = dataIn.readUTF();
@@ -83,95 +131,22 @@ public class ClientHandler implements Runnable {
         try {
             // Usar Strategy Pattern para procesar comandos
             MessageHandler handler = handlerRegistry.getHandler(command);
-            
+
             if (handler != null) {
                 // Verificar si requiere autenticación
                 if (handler.requiresAuthentication() && !authenticated) {
-                    sendMessage(Constants.RESP_ERROR + Constants.PROTOCOL_SEPARATOR + 
-                               "Debes iniciar sesión primero");
+                    sendError("Debes iniciar sesión primero");
                     return;
                 }
-                
+
                 // Procesar con el handler
                 handler.handle(parts, this);
             } else {
-                // Comandos especiales que aún no tienen handler (FILE, VIDEO)
-                // TODO: Crear handlers para FILE y VIDEO
-                switch (command) {
-                    case "VIDEO":
-                        handleVideoCommand(parts);
-                        break;
-                    case "FILE":
-                        handleFileCommand(parts);
-                        break;
-                    default:
-                        sendMessage(Constants.RESP_ERROR + Constants.PROTOCOL_SEPARATOR + 
-                                   "Comando desconocido: " + command);
-                }
+                sendError("Comando desconocido: " + command);
             }
         } catch (Exception e) {
             System.err.println("Error procesando mensaje: " + e.getMessage());
-            sendMessage(Constants.RESP_ERROR + Constants.PROTOCOL_SEPARATOR + 
-                       "Error procesando tu solicitud");
-        }
-    }
-    
-    /**
-     * Maneja el comando FILE (temporal hasta crear FileHandler).
-     */
-    private void handleFileCommand(String[] parts) {
-        if (!authenticated) {
-            sendMessage(Constants.RESP_ERROR + Constants.PROTOCOL_SEPARATOR + 
-                       "Debes iniciar sesión primero");
-            return;
-        }
-
-        // Validar formato: FILE|destinatario|nombre|tamaño
-        if (parts.length < 4) {
-            sendMessage(Constants.RESP_ERROR + Constants.PROTOCOL_SEPARATOR + 
-                       "Formato incorrecto. Usa: FILE|destinatario|nombre|tamaño");
-            return;
-        }
-
-        String recipient = parts[1];
-        String fileName = parts[2];
-        int fileSize;
-        try {
-            fileSize = Integer.parseInt(parts[3]);
-        } catch (NumberFormatException e) {
-            sendMessage(Constants.RESP_ERROR + Constants.PROTOCOL_SEPARATOR + 
-                       "Tamaño de archivo inválido");
-            return;
-        }
-        
-        // Validar tamaño del archivo
-        if (fileSize > Constants.MAX_FILE_SIZE_BYTES) {
-            sendMessage(Constants.RESP_ERROR + Constants.PROTOCOL_SEPARATOR + 
-                       "Archivo demasiado grande (max " + Constants.MAX_FILE_SIZE_MB + "MB)");
-            return;
-        }
-
-        try {
-            // Recibir bytes del archivo
-            byte[] fileData = new byte[fileSize];
-            dataIn.readFully(fileData);
-
-            System.out.println("Archivo recibido de " + username + " para " + recipient + ": " + fileName + " (" + fileSize + " bytes)");
-
-            // Enviar archivo privado
-            boolean sent = server.sendPrivateFile(fileName, fileData, recipient, this);
-            if (sent) {
-                sendMessage(Constants.RESP_SERVER + Constants.PROTOCOL_SEPARATOR + 
-                           "Archivo " + fileName + " enviado correctamente a " + recipient);
-            } else {
-                sendMessage(Constants.RESP_ERROR + Constants.PROTOCOL_SEPARATOR + 
-                           "Usuario '" + recipient + "' no encontrado o no está conectado");
-            }
-
-        } catch (IOException e) {
-            sendMessage(Constants.RESP_ERROR + Constants.PROTOCOL_SEPARATOR + 
-                       "Error al recibir el archivo");
-            System.err.println("Error al recibir archivo de " + username + ": " + e.getMessage());
+            sendError("Error procesando tu solicitud");
         }
     }
     
@@ -186,8 +161,7 @@ public class ClientHandler implements Runnable {
                 if (!sent) {
                     System.out.println("Error: No se pudo enviar video a " + videoRecipient);
                     videoActive = false;
-                    sendMessage(Constants.RESP_ERROR + Constants.PROTOCOL_SEPARATOR + 
-                               "No se pudo enviar video. El destinatario puede haberse desconectado.");
+                    sendError("No se pudo enviar video. El destinatario puede haberse desconectado.");
                     break;
                 }
             }
@@ -196,61 +170,6 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    private void handleVideoCommand(String[] parts) {
-        if (!authenticated) {
-            sendMessage(Constants.RESP_ERROR + Constants.PROTOCOL_SEPARATOR + 
-                       "Debes iniciar sesión primero");
-            return;
-        }
-        
-        // Formato: VIDEO|START|destinatario o VIDEO|STOP
-        if (parts.length >= 2 && "START".equals(parts[1])) {
-            if (parts.length < 3) {
-                sendMessage(Constants.RESP_ERROR + Constants.PROTOCOL_SEPARATOR + 
-                           "Formato incorrecto. Usa: VIDEO|START|destinatario");
-                return;
-            }
-            
-            String recipient = parts[2];
-            
-            // Verificar que el destinatario existe
-            if (server.getClientByUsername(recipient) == null) {
-                sendMessage(Constants.RESP_ERROR + Constants.PROTOCOL_SEPARATOR + 
-                           "Usuario '" + recipient + "' no encontrado o no está conectado");
-                return;
-            }
-            
-            if (!videoActive) {
-                try {
-                    // Inicializar video solo cuando se active
-                    videoIn = new DataInputStream(videoClient.getInputStream());
-                    videoActive = true;
-                    videoRecipient = recipient;
-                    sendMessage(Constants.RESP_SERVER + Constants.PROTOCOL_SEPARATOR + 
-                               "Videollamada iniciada con " + recipient);
-                    new Thread(this::receiveVideo).start();
-                } catch (IOException e) {
-                    sendMessage(Constants.RESP_ERROR + Constants.PROTOCOL_SEPARATOR + 
-                               "No se pudo iniciar el video: " + e.getMessage());
-                }
-            } else {
-                sendMessage(Constants.RESP_ERROR + Constants.PROTOCOL_SEPARATOR + 
-                           "Ya hay una videollamada activa. Detén la actual primero.");
-            }
-        } else if (parts.length >= 2 && "STOP".equals(parts[1])) {
-            videoActive = false;
-            videoRecipient = null;
-            sendMessage(Constants.RESP_SERVER + Constants.PROTOCOL_SEPARATOR + 
-                       "Videollamada detenida.");
-            try {
-                if (videoIn != null) videoIn.close();
-            } catch (IOException ignored) {}
-        } else {
-            sendMessage(Constants.RESP_ERROR + Constants.PROTOCOL_SEPARATOR + 
-                       "Formato incorrecto. Usa: VIDEO|START|destinatario o VIDEO|STOP");
-        }
-    }
-    
     public void sendMessage(String message) {
         try {
             if (dataOut != null && !socket.isClosed()) {
@@ -267,8 +186,7 @@ public class ClientHandler implements Runnable {
         try {
             // Enviar encabezado
             int fileSize = fileData.length;
-            sendMessage(Constants.CMD_FILE + Constants.PROTOCOL_SEPARATOR + 
-                       fileName + Constants.PROTOCOL_SEPARATOR + fileSize);
+            sendMessage(MessageBuilder.buildFileTransferMetadata(fileName, fileSize));
             
             // No necesitamos Thread.sleep aquí - el cliente leerá cuando esté listo
             // El flush() asegura que el mensaje se envíe inmediatamente

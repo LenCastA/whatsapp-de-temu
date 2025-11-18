@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import com.mycompany.chat.service.DatabaseService;
 import com.mycompany.chat.util.Constants;
 import com.mycompany.chat.factory.DefaultSocketFactory;
 import com.mycompany.chat.factory.SocketFactory;
@@ -24,6 +25,7 @@ public class ChatServer {
     private Set<ClientHandler> clients;
     private volatile boolean running;
     private final SocketFactory socketFactory; // Factory para crear sockets
+    private final DatabaseService databaseService;
 
     // Constructor por defecto (puerto 9000)
     public ChatServer() {
@@ -34,14 +36,19 @@ public class ChatServer {
     public ChatServer(int port) {
         this(port, new DefaultSocketFactory());
     }
-    
+
     // Constructor con factory personalizado (útil para testing)
     public ChatServer(int port, SocketFactory socketFactory) {
+        this(port, socketFactory, new DatabaseService());
+    }
+
+    public ChatServer(int port, SocketFactory socketFactory, DatabaseService databaseService) {
         this.port = port;
         this.clients = ConcurrentHashMap.newKeySet();
         this.threadPool = Executors.newFixedThreadPool(Constants.SERVER_THREAD_POOL_SIZE);
         this.running = true;
         this.socketFactory = socketFactory;
+        this.databaseService = databaseService;
     }
     
     public void start() {
@@ -55,7 +62,7 @@ public class ChatServer {
             System.out.println("Esperando conexiones de clientes...\n");
 
             // Verificar conexión a DB
-            if (Database.testConnection()) {
+            if (databaseService.verificarConexion()) {
                 System.out.println("Conexion a base de datos exitosa\n");
             } else {
                 System.err.println("Error: No se pudo conectar a la base de datos");
@@ -69,7 +76,7 @@ public class ChatServer {
                     Socket clientVideo = videoServer.accept();
                     System.out.println("Nueva conexion desde: " + clientSocket.getInetAddress());
 
-                    ClientHandler handler = new ClientHandler(clientSocket, this, clientVideo);
+                    ClientHandler handler = new ClientHandler(clientSocket, this, clientVideo, databaseService);
                     threadPool.submit(handler);
 
                 } catch (SocketException e) {
@@ -232,5 +239,9 @@ public class ChatServer {
         ChatServer server = new ChatServer();
         Runtime.getRuntime().addShutdownHook(new Thread(server::shutdown));
         server.start();
+    }
+
+    public ExecutorService getThreadPool() {
+        return threadPool;
     }
 }

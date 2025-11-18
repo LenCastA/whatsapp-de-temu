@@ -2,13 +2,11 @@ package com.mycompany.chat;
 
 import java.awt.GridLayout;
 import java.awt.image.BufferedImage;
-import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -43,6 +41,7 @@ import com.mycompany.chat.commands.MenuCommandInvoker;
 import com.mycompany.chat.commands.VideoCommand;
 import com.mycompany.chat.factory.DefaultSocketFactory;
 import com.mycompany.chat.factory.SocketFactory;
+import com.mycompany.chat.protocol.MessageBuilder;
 import com.mycompany.chat.util.Constants;
 
 public class ChatClient {
@@ -51,8 +50,6 @@ public class ChatClient {
 
     private Socket socket;
     private Socket videoSocket;
-    private BufferedReader in;
-    private PrintWriter out;
     private DataInputStream dataIn;
     private DataOutputStream dataOut;
     private DataOutputStream videoOut;
@@ -136,8 +133,7 @@ public class ChatClient {
             String password = scanner.nextLine().trim();
 
             // Enviar login al servidor según nuevo formato (debe ser síncrono)
-            sendMessageBlocking(Constants.CMD_LOGIN + Constants.PROTOCOL_SEPARATOR + username + 
-                       Constants.PROTOCOL_SEPARATOR + password);
+            sendMessageBlocking(MessageBuilder.buildLogin(username, password));
 
             // Esperar respuesta del login con timeout
             boolean loginReceived = false;
@@ -402,15 +398,14 @@ public class ChatClient {
             videoFrame.setVisible(true);
         }
         
-        sendMessageBlocking(Constants.CMD_VIDEO + Constants.PROTOCOL_SEPARATOR + "START" + 
-                   Constants.PROTOCOL_SEPARATOR + recipient);
+        sendMessageBlocking(MessageBuilder.buildVideoStart(recipient));
         executorService.submit(this::sendVideo);
         executorService.submit(this::receiveVideo);
     }
     
     public void stopVideoCall() {
         videoActive = false;
-        sendMessageBlocking(Constants.CMD_VIDEO + Constants.PROTOCOL_SEPARATOR + "STOP");
+        sendMessageBlocking(MessageBuilder.buildVideoStop());
         
         // Cerrar y limpiar la ventana de video
         if (videoFrame != null) {
@@ -454,9 +449,7 @@ public class ChatClient {
             }
 
             // Avisar al servidor que viene un archivo (formato: FILE|destinatario|nombre|tamaño)
-            sendMessageSync(Constants.CMD_FILE + Constants.PROTOCOL_SEPARATOR + currentRecipient + 
-                       Constants.PROTOCOL_SEPARATOR + fileName + 
-                       Constants.PROTOCOL_SEPARATOR + fileSize);
+            sendMessageSync(MessageBuilder.buildFileTransferRequest(currentRecipient, fileName, fileSize));
             
             // Enviar tamaño y datos (sincronizado para evitar conflictos con mensajes)
             synchronized (dataOutLock) {
@@ -607,7 +600,7 @@ public class ChatClient {
                 System.err.println("  - Problemas con los drivers de la cámara");
                 System.err.println("  - Permisos insuficientes para acceder a la cámara\n");
                 videoActive = false;
-                sendMessageBlocking(Constants.CMD_VIDEO + Constants.PROTOCOL_SEPARATOR + "STOP");
+                sendMessageBlocking(MessageBuilder.buildVideoStop());
                 return;
             }
 
@@ -733,7 +726,7 @@ public class ChatClient {
             // Notificar al servidor que se detuvo el video si estaba activo
             if (wasActive) {
                 try {
-                    sendMessageBlocking(Constants.CMD_VIDEO + Constants.PROTOCOL_SEPARATOR + "STOP");
+                    sendMessageBlocking(MessageBuilder.buildVideoStop());
                 } catch (Exception e) {
                     // Ignorar si no se puede enviar el mensaje
                 }
