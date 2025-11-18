@@ -40,7 +40,7 @@ public class LoginHandler implements MessageHandler {
                             user + " se ha conectado", handler);
                 return true;
             } else {
-                handler.sendError("Credenciales invalidas");
+                handler.sendError("Credenciales inválidas");
                 System.out.println("Intento de login fallido: " + user);
                 return false;
             }
