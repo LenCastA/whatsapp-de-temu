@@ -11,12 +11,7 @@ public class LogoutHandler implements MessageHandler {
     
     @Override
     public boolean handle(String[] parts, ClientHandler handler) {
-        if (handler.isAuthenticated()) {
-            handler.sendServerMessage("Cerrando sesión...");
-            handler.setRunning(false);
-            return true;
-        }
-        handler.sendServerMessage("Sesión finalizada.");
+        handler.sendServerMessage("Cerrando sesión...");
         handler.setRunning(false);
         return true;
     }
@@ -28,7 +23,7 @@ public class LogoutHandler implements MessageHandler {
     
     @Override
     public boolean requiresAuthentication() {
-        return false; // Logout puede ejecutarse sin autenticación
+        return true; // Logout requiere autenticación
     }
 }
 
