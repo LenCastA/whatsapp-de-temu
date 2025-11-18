@@ -22,11 +22,11 @@ public class TestDataInitializer {
      * Inicializa usuarios de prueba en la base de datos.
      * Solo crea usuarios que no existan previamente.
      * 
+     * @param databaseService servicio de base de datos a utilizar
      * @return número de usuarios creados exitosamente
      */
-    public static int initializeTestUsers() {
+    public static int initializeTestUsers(DatabaseService databaseService) {
         int created = 0;
-        DatabaseService databaseService = new DatabaseService();
         
         System.out.println("Inicializando usuarios de prueba...");
         
@@ -61,6 +61,19 @@ public class TestDataInitializer {
     }
     
     /**
+     * Inicializa usuarios de prueba en la base de datos.
+     * Solo crea usuarios que no existan previamente.
+     * Crea una nueva instancia de DatabaseService para esta operación.
+     * 
+     * @return número de usuarios creados exitosamente
+     * @deprecated Use {@link #initializeTestUsers(DatabaseService)} para mejor gestión de recursos
+     */
+    @Deprecated
+    public static int initializeTestUsers() {
+        return initializeTestUsers(new DatabaseService());
+    }
+    
+    /**
      * Genera hashes BCrypt para las contraseñas de prueba.
      * Útil para crear scripts SQL con hashes pre-generados.
      */
@@ -84,7 +97,8 @@ public class TestDataInitializer {
         if (args.length > 0 && args[0].equals("--print-hashes")) {
             printTestUserHashes();
         } else {
-            initializeTestUsers();
+            DatabaseService databaseService = new DatabaseService();
+            initializeTestUsers(databaseService);
         }
     }
 }

@@ -5,6 +5,7 @@
 package com.mycompany.chat;
 
 import com.mycompany.chat.config.ConfigManager;
+import com.mycompany.chat.service.DatabaseService;
 import com.mycompany.chat.util.TestDataInitializer;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -69,7 +70,8 @@ public class EjecutorSql {
             
             // Crear usuarios de prueba automáticamente después de crear la base de datos
             System.out.println("\nCreando usuarios de prueba...");
-            TestDataInitializer.initializeTestUsers();
+            DatabaseService databaseService = new DatabaseService();
+            TestDataInitializer.initializeTestUsers(databaseService);
             
         } catch (Exception e) {
             e.printStackTrace();
