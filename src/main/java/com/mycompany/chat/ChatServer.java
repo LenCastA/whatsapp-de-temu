@@ -241,7 +241,7 @@ public class ChatServer {
         server.start();
     }
 
-    ExecutorService getThreadPool() {
+    public ExecutorService getThreadPool() {
         return threadPool;
     }
 }
